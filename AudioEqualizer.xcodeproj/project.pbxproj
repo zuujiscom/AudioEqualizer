@@ -1,0 +1,418 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		100000000000000000000001 /* AudioEqualizerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000001 /* AudioEqualizerApp.swift */; };
+		100000000000000000000002 /* AudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000002 /* AudioEngine.swift */; };
+		100000000000000000000004 /* SpectrumAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000004 /* SpectrumAnalyzer.swift */; };
+		100000000000000000000005 /* AudioDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000005 /* AudioDevice.swift */; };
+		100000000000000000000006 /* EQBand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000006 /* EQBand.swift */; };
+		100000000000000000000007 /* EQPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000007 /* EQPreset.swift */; };
+		100000000000000000000008 /* PresetManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000008 /* PresetManager.swift */; };
+		100000000000000000000009 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000009 /* MainView.swift */; };
+		10000000000000000000000B /* SpectrumView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000B /* SpectrumView.swift */; };
+		10000000000000000000000C /* BandControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000C /* BandControlsView.swift */; };
+		10000000000000000000000E /* DeviceSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000E /* DeviceSelectionView.swift */; };
+		10000000000000000000000F /* PresetSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000F /* PresetSectionView.swift */; };
+		100000000000000000000010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000010 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		200000000000000000000001 /* AudioEqualizerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEqualizerApp.swift; sourceTree = "<group>"; };
+		200000000000000000000002 /* AudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngine.swift; sourceTree = "<group>"; };
+		200000000000000000000004 /* SpectrumAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpectrumAnalyzer.swift; sourceTree = "<group>"; };
+		200000000000000000000005 /* AudioDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDevice.swift; sourceTree = "<group>"; };
+		200000000000000000000006 /* EQBand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQBand.swift; sourceTree = "<group>"; };
+		200000000000000000000007 /* EQPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQPreset.swift; sourceTree = "<group>"; };
+		200000000000000000000008 /* PresetManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetManager.swift; sourceTree = "<group>"; };
+		200000000000000000000009 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		20000000000000000000000B /* SpectrumView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpectrumView.swift; sourceTree = "<group>"; };
+		20000000000000000000000C /* BandControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BandControlsView.swift; sourceTree = "<group>"; };
+		20000000000000000000000E /* DeviceSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSelectionView.swift; sourceTree = "<group>"; };
+		20000000000000000000000F /* PresetSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetSectionView.swift; sourceTree = "<group>"; };
+		200000000000000000000010 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		200000000000000000000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		200000000000000000000012 /* AudioEqualizer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AudioEqualizer.entitlements; sourceTree = "<group>"; };
+		200000000000000000000013 /* AudioEqualizer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AudioEqualizer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		300000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		400000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				400000000000000000000002 /* AudioEqualizer */,
+				400000000000000000000007 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		400000000000000000000002 /* AudioEqualizer */ = {
+			isa = PBXGroup;
+			children = (
+				400000000000000000000003 /* App */,
+				400000000000000000000004 /* Audio */,
+				400000000000000000000005 /* Models */,
+				400000000000000000000006 /* ViewModels */,
+				400000000000000000000008 /* Views */,
+				400000000000000000000009 /* Resources */,
+			);
+			path = AudioEqualizer;
+			sourceTree = "<group>";
+		};
+		400000000000000000000003 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000001 /* AudioEqualizerApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		400000000000000000000004 /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000002 /* AudioEngine.swift */,
+				200000000000000000000004 /* SpectrumAnalyzer.swift */,
+			);
+			path = Audio;
+			sourceTree = "<group>";
+		};
+		400000000000000000000005 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000005 /* AudioDevice.swift */,
+				200000000000000000000006 /* EQBand.swift */,
+				200000000000000000000007 /* EQPreset.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		400000000000000000000006 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000008 /* PresetManager.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		400000000000000000000008 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000009 /* MainView.swift */,
+				20000000000000000000000B /* SpectrumView.swift */,
+				20000000000000000000000C /* BandControlsView.swift */,
+				20000000000000000000000E /* DeviceSelectionView.swift */,
+				20000000000000000000000F /* PresetSectionView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		400000000000000000000009 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000010 /* Assets.xcassets */,
+				200000000000000000000011 /* Info.plist */,
+				200000000000000000000012 /* AudioEqualizer.entitlements */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		400000000000000000000007 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000013 /* AudioEqualizer.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		500000000000000000000001 /* AudioEqualizer */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 600000000000000000000002 /* Build configuration list for PBXNativeTarget "AudioEqualizer" */;
+			buildPhases = (
+				300000000000000000000001 /* Sources */,
+				300000000000000000000002 /* Frameworks */,
+				300000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AudioEqualizer;
+			productName = AudioEqualizer;
+			productReference = 200000000000000000000013 /* AudioEqualizer.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		700000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					500000000000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = 600000000000000000000001 /* Build configuration list for PBXProject "AudioEqualizer" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 400000000000000000000001;
+			productRefGroup = 400000000000000000000007 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				500000000000000000000001 /* AudioEqualizer */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		300000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				100000000000000000000010 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		300000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				100000000000000000000001 /* AudioEqualizerApp.swift in Sources */,
+				100000000000000000000002 /* AudioEngine.swift in Sources */,
+				100000000000000000000004 /* SpectrumAnalyzer.swift in Sources */,
+				100000000000000000000005 /* AudioDevice.swift in Sources */,
+				100000000000000000000006 /* EQBand.swift in Sources */,
+				100000000000000000000007 /* EQPreset.swift in Sources */,
+				100000000000000000000008 /* PresetManager.swift in Sources */,
+				100000000000000000000009 /* MainView.swift in Sources */,
+				10000000000000000000000B /* SpectrumView.swift in Sources */,
+				10000000000000000000000C /* BandControlsView.swift in Sources */,
+				10000000000000000000000E /* DeviceSelectionView.swift in Sources */,
+				10000000000000000000000F /* PresetSectionView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		800000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		800000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		800000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = AudioEqualizer/Resources/AudioEqualizer.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AudioEqualizer/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zuujis.AudioEqualizer;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		800000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = AudioEqualizer/Resources/AudioEqualizer.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AudioEqualizer/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zuujis.AudioEqualizer;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		600000000000000000000001 /* Build configuration list for PBXProject "AudioEqualizer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				800000000000000000000001 /* Debug */,
+				800000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		600000000000000000000002 /* Build configuration list for PBXNativeTarget "AudioEqualizer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				800000000000000000000003 /* Debug */,
+				800000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 700000000000000000000001 /* Project object */;
+}
