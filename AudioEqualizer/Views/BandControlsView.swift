@@ -30,15 +30,7 @@ struct BandControlsView: View {
 
             amplificationRow
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .bottom, spacing: 18) {
-                    ForEach(Array(engine.bands.enumerated()), id: \.element.id) { index, band in
-                        BandSlider(band: binding(forIndex: index), index: index)
-                    }
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 8)
-            }
+            bandRow
 
             if showBandDetails {
                 bandDetailsGrid
@@ -53,6 +45,42 @@ struct BandControlsView: View {
             RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(Color.primary.opacity(0.08))
         )
+    }
+
+    /// The bands are laid out to fit the panel: columns shrink toward
+    /// `minColumnWidth` as the band count grows, and only fall back to
+    /// horizontal scrolling once even the narrowest column no longer fits.
+    /// A fixed column width made 31-band mode several screens wide.
+    private static let columnSpacing: CGFloat = 2
+    private static let minColumnWidth: CGFloat = 20
+    private static let maxColumnWidth: CGFloat = 72
+
+    private var bandRow: some View {
+        GeometryReader { geo in
+            let count = max(1, engine.bands.count)
+            let gaps = Self.columnSpacing * CGFloat(count - 1)
+            let ideal = (geo.size.width - gaps) / CGFloat(count)
+            let column = min(Self.maxColumnWidth, max(Self.minColumnWidth, ideal))
+            let fits = column * CGFloat(count) + gaps <= geo.size.width + 0.5
+
+            let row = HStack(alignment: .bottom, spacing: Self.columnSpacing) {
+                ForEach(Array(engine.bands.enumerated()), id: \.element.id) { index, _ in
+                    BandSlider(
+                        band: binding(forIndex: index),
+                        index: index,
+                        columnWidth: column
+                    )
+                }
+            }
+
+            if fits {
+                row.frame(width: geo.size.width, alignment: .center)
+            } else {
+                ScrollView(.horizontal, showsIndicators: true) { row }
+            }
+        }
+        .frame(height: BandSlider.rowHeight)
+        .padding(.vertical, 6)
     }
 
     private var amplificationRow: some View {
@@ -158,32 +186,56 @@ struct BandControlsView: View {
 struct BandSlider: View {
     @Binding var band: BandEditable
     let index: Int
+    /// Horizontal space this column may occupy — see `BandControlsView.bandRow`.
+    let columnWidth: CGFloat
+
+    /// Track length of the (rotated) vertical slider.
+    static let trackLength: CGFloat = 130
+    /// Total height of a band column, so the row can be given a fixed height.
+    static let rowHeight: CGFloat = trackLength + 56
 
     private let gainRange: ClosedRange<Double> = -24...24
+
+    /// Narrow columns (31-band mode) can't fit the full "+12.0" readout, so the
+    /// labels scale down and the gain value drops its decimal.
+    private var isCompact: Bool { columnWidth < 30 }
+
+    private var gainText: String {
+        isCompact
+            ? String(format: "%+.0f", band.gain)
+            : String(format: "%+0.1f", band.gain)
+    }
 
     var body: some View {
         VStack(spacing: 4) {
             // Gain value label
-            Text(String(format: "%+0.1f", band.gain))
-                .font(.system(size: 9, weight: band.gain == 0 ? .regular : .semibold))
+            Text(gainText)
+                .font(.system(size: isCompact ? 8 : 9, weight: band.gain == 0 ? .regular : .semibold))
                 .monospacedDigit()
                 .foregroundStyle(gainColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
 
-            // Slider
+            // Slider. A SwiftUI Slider is always horizontal, so it is laid out
+            // at its full track length and then rotated upright; the outer frame
+            // has to be the rotated (transposed) size or every band reserves a
+            // track-length of horizontal space and only a handful stay on screen.
             Slider(
                 value: $band.gain,
                 in: gainRange,
                 step: 0.5
             )
-            .frame(width: 44, height: 130)
+            .frame(width: Self.trackLength, height: columnWidth)
             .rotationEffect(.degrees(-90), anchor: .center)
-            .frame(width: 130, height: 44)
+            .frame(width: columnWidth, height: Self.trackLength)
             .tint(gainColor)
 
             // Frequency label
             Text(band.frequencyLabel)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: isCompact ? 8 : 10, weight: .medium))
                 .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
 
             // Dot indicator for tap to toggle on/off
             Button {
@@ -200,7 +252,7 @@ struct BandSlider: View {
                 .font(.system(size: 8))
                 .foregroundStyle(band.isEnabled ? Color.clear : Color.secondary)
         }
-        .padding(.horizontal, 2)
+        .frame(width: columnWidth)
         .contextMenu {
             Button("Reset Gain") { band.gain = 0 }
             Button(band.isEnabled ? "Disable" : "Enable") { band.isEnabled.toggle() }

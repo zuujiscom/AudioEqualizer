@@ -64,7 +64,8 @@ final class AudioEngine: NSObject, ObservableObject {
 
     // MARK: - Core Audio
 
-    private let engine = AVAudioEngine()
+    /// Replaced for every processing session — see `stopProcessing()`.
+    private var engine = AVAudioEngine()
     private var eqNode: AVAudioUnitEQ!
     private var fftAnalyzer = SpectrumAnalyzer()
     private var isSetup = false
@@ -88,6 +89,7 @@ final class AudioEngine: NSObject, ObservableObject {
         case tapCreationFailed(OSStatus)
         case tapUIDUnavailable
         case aggregateCreationFailed(OSStatus)
+        case aggregateDeviceUnavailable
         case tapFormatUnavailable
         case outputFormatUnavailable
         case manualRenderingFailed(String)
@@ -100,6 +102,7 @@ final class AudioEngine: NSObject, ObservableObject {
             case .tapCreationFailed(let status): return "AudioHardwareCreateProcessTap failed (\(status))"
             case .tapUIDUnavailable: return "Could not read the created tap's UID"
             case .aggregateCreationFailed(let status): return "AudioHardwareCreateAggregateDevice failed (\(status))"
+            case .aggregateDeviceUnavailable: return "The system audio route did not become ready"
             case .tapFormatUnavailable: return "Could not read the tap's stream format"
             case .outputFormatUnavailable: return "Could not read the output device's stream format"
             case .manualRenderingFailed(let reason): return "Manual rendering setup failed: \(reason)"
@@ -309,22 +312,63 @@ final class AudioEngine: NSObject, ObservableObject {
         var dataSize: UInt32 = 0
         AudioObjectGetPropertyDataSize(deviceID, &propertyAddress, 0, nil, &dataSize)
 
-        let count = Int(dataSize) / MemoryLayout<AudioBufferList>.size
-        guard count > 0 else { return 0 }
-
-        var bufferList = AudioBufferList(
-            mNumberBuffers: 1,
-            mBuffers: AudioBuffer(mNumberChannels: 0, mDataByteSize: 0, mData: nil)
+        // AudioBufferList has a flexible trailing array. Some virtual devices
+        // (including the Xbox headset bridge) report more than one buffer, so
+        // a stack AudioBufferList with space for one entry would overflow here.
+        guard dataSize >= MemoryLayout<AudioBufferList>.size else { return 0 }
+        let bufferList = UnsafeMutableRawPointer.allocate(
+            byteCount: Int(dataSize),
+            alignment: MemoryLayout<AudioBufferList>.alignment
         )
+        bufferList.initializeMemory(as: UInt8.self, repeating: 0, count: Int(dataSize))
+        defer { bufferList.deallocate() }
 
-        AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &dataSize, &bufferList)
+        let dataStatus = AudioObjectGetPropertyData(
+            deviceID, &propertyAddress, 0, nil, &dataSize, bufferList
+        )
+        guard dataStatus == noErr else { return 0 }
 
         var channelCount: UInt32 = 0
-        let list = UnsafeMutableAudioBufferListPointer(&bufferList)
+        let list = UnsafeMutableAudioBufferListPointer(
+            bufferList.assumingMemoryBound(to: AudioBufferList.self)
+        )
         for buffer in list {
             channelCount += buffer.mNumberChannels
         }
         return Int(channelCount)
+    }
+
+    /// The per-buffer channel counts of a device's input stream configuration,
+    /// in Core Audio's own buffer order. `getDeviceChannelCount` collapses this
+    /// to a total; the tap plumbing needs the individual buffers.
+    static func inputBufferChannelCounts(deviceID: AudioDeviceID) -> [UInt32] {
+        guard deviceID != kAudioObjectUnknown else { return [] }
+
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreamConfiguration,
+            mScope: kAudioDevicePropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var dataSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(deviceID, &propertyAddress, 0, nil, &dataSize) == noErr,
+              dataSize >= MemoryLayout<AudioBufferList>.size else { return [] }
+
+        let bufferList = UnsafeMutableRawPointer.allocate(
+            byteCount: Int(dataSize),
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        bufferList.initializeMemory(as: UInt8.self, repeating: 0, count: Int(dataSize))
+        defer { bufferList.deallocate() }
+
+        guard AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &dataSize, bufferList) == noErr else {
+            return []
+        }
+
+        let list = UnsafeMutableAudioBufferListPointer(
+            bufferList.assumingMemoryBound(to: AudioBufferList.self)
+        )
+        return list.map { $0.mNumberChannels }
     }
 
     enum DeviceDirection {
@@ -465,6 +509,9 @@ final class AudioEngine: NSObject, ObservableObject {
             throw AudioRouteError.aggregateCreationFailed(aggStatus)
         }
         aggregateDeviceID = newAggregateID
+        guard waitForAggregateDevice(newAggregateID) else {
+            throw AudioRouteError.aggregateDeviceUnavailable
+        }
 
     }
 
@@ -481,9 +528,10 @@ final class AudioEngine: NSObject, ObservableObject {
             kAudioAggregateDeviceSubDeviceListKey: [
                 [kAudioSubDeviceUIDKey: outputUID]
             ],
-            // false: don't defer the aggregate's start until a tapped process
-            // happens to be playing — we want the device live immediately.
-            kAudioAggregateDeviceTapAutoStartKey: false,
+            // The tap must start with the aggregate. If it remains inactive,
+            // `.mutedWhenTapped` still silences the original system stream but
+            // the aggregate supplies only zeroed capture buffers.
+            kAudioAggregateDeviceTapAutoStartKey: true,
             kAudioAggregateDeviceTapListKey: [
                 [
                     kAudioSubTapUIDKey: tapUID,
@@ -491,6 +539,30 @@ final class AudioEngine: NSObject, ObservableObject {
                 ]
             ]
         ]
+    }
+
+    /// Aggregate creation returns before Core Audio has finished activating its
+    /// tap stream. Starting the IO proc too early can yield silent buffers even
+    /// though the process tap is already muting the original system output.
+    private func waitForAggregateDevice(_ deviceID: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceIsAlive,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        for _ in 0..<30 {
+            var isAlive: UInt32 = 0
+            var dataSize = UInt32(MemoryLayout<UInt32>.size)
+            let status = AudioObjectGetPropertyData(
+                deviceID, &address, 0, nil, &dataSize, &isAlive
+            )
+            if status == noErr, isAlive != 0 {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        return false
     }
 
     private func teardownSystemAudioRoute() {
@@ -510,10 +582,11 @@ final class AudioEngine: NSObject, ObservableObject {
 
     /// Re-points the route at the new system output device.
     ///
-    /// Reconfigures the existing aggregate in place via
-    /// `AudioHardwareAggregateDevice.setComposition` (macOS 15+) so the tap
-    /// survives the switch, then restarts the IO proc because the new device's
-    /// stream format may differ. Falls back to a full rebuild if that fails.
+    /// This rebuilds the tap and aggregate from scratch rather than
+    /// reconfiguring in place. An in-place `setComposition` still requires
+    /// stopping the IOProc, and that permanently deactivates the aggregate's
+    /// auto-started tap: the device would come back reporting no error while
+    /// playing silence. A full rebuild is the only path known to restore audio.
     private func rebuildRoute() {
         // While the EQ is off there is intentionally no tap/aggregate; the route
         // gets built fresh on the next start(), so don't resurrect it here.
@@ -524,21 +597,11 @@ final class AudioEngine: NSObject, ObservableObject {
             return
         }
 
+        NSLog("Switching output device to \(outputUID)")
         stopProcessing()
-
-        do {
-            guard let tapUID = currentTapUID else { throw AudioRouteError.tapUIDUnavailable }
-            try AudioHardwareAggregateDevice(id: aggregateDeviceID)
-                .setComposition(aggregateComposition(outputUID: outputUID, tapUID: tapUID))
-            try startProcessing()
-            routeErrorMessage = nil
-            NSLog("Switched output device to \(outputUID)")
-        } catch {
-            NSLog("In-place device switch failed, rebuilding from scratch: \(error)")
-            teardownSystemAudioRoute()
-            isRunning = false
-            start()
-        }
+        teardownSystemAudioRoute()
+        isRunning = false
+        start()
     }
 
     // MARK: - Audio Engine Setup
@@ -554,8 +617,8 @@ final class AudioEngine: NSObject, ObservableObject {
         // the native boost on the EQ processor.
         applyMasterGain()
 
-        engine.attach(eqNode)
-
+        // The EQ node is attached in `startProcessing()`, which builds the
+        // graph on a fresh AVAudioEngine each time.
         startHardwareListening()
         isSetup = true
     }
@@ -621,6 +684,17 @@ final class AudioEngine: NSObject, ObservableObject {
     // manual rendering mode so `AVAudioUnitEQ` still does the actual filtering.
 
     private func startProcessing() throws {
+        try buildRenderGraph()
+        try startIOProc()
+    }
+
+    /// Builds the EQ graph and points the renderer at it. Deliberately separate
+    /// from the IOProc: stopping the aggregate's IOProc also deactivates its
+    /// auto-started tap, and the tap does not come back when a new IOProc
+    /// starts — the capture buffers stay zeroed while the tap keeps muting the
+    /// real output, which is exactly what "changing the band count mutes it"
+    /// looked like.
+    private func buildRenderGraph() throws {
         var tapASBD = try tapStreamFormat()
         guard let tapFormat = AVAudioFormat(streamDescription: &tapASBD), tapFormat.channelCount > 0 else {
             throw AudioRouteError.tapFormatUnavailable
@@ -638,9 +712,22 @@ final class AudioEngine: NSObject, ObservableObject {
         ctx.inputASBD = tapASBD
         ctx.outputASBD = outputASBD
         ctx.maxFrames = 4096
+        ctx.inputBufferOffset = tapBufferOffset(tapChannels: tapFormat.channelCount)
 
         // The graph runs in the standard non-interleaved float format that
         // AVAudioUnitEQ requires; the renderer converts the tap's layout to match.
+        // Build the graph on a brand-new AVAudioEngine. Reusing one instance
+        // across sessions means repeatedly enabling and disabling manual
+        // rendering mode, which leaves the graph alive but rendering silence —
+        // that is why changing the band count used to mute the output.
+        let engine = AVAudioEngine()
+        self.engine = engine
+
+        if let owner = eqNode.engine {
+            owner.detach(eqNode)
+        }
+        engine.attach(eqNode)
+
         let source = AVAudioSourceNode(format: renderFormat) { _, _, frameCount, ablPtr in
             ctx.copyCapturedAudio(into: ablPtr, frameCount: frameCount)
         }
@@ -657,9 +744,35 @@ final class AudioEngine: NSObject, ObservableObject {
             throw AudioRouteError.manualRenderingFailed(error.localizedDescription)
         }
 
-        ctx.renderBlock = engine.manualRenderingBlock
-        ctx.renderBuffer = AVAudioPCMBuffer(pcmFormat: renderFormat, frameCapacity: ctx.maxFrames)
+        ctx.setRenderTarget(
+            block: engine.manualRenderingBlock,
+            buffer: AVAudioPCMBuffer(pcmFormat: renderFormat, frameCapacity: ctx.maxFrames)
+        )
 
+        inputFormat = formatDescription(tapFormat)
+        outputFormat = "\(Int(outputASBD.mSampleRate / 1000))kHz \(outputASBD.mChannelsPerFrame)ch"
+    }
+
+    /// Tears the EQ graph down while leaving the IOProc (and therefore the tap)
+    /// running. The renderer outputs silence until a new graph is installed.
+    private func teardownRenderGraph() {
+        renderer.setRenderTarget(block: nil, buffer: nil)
+
+        if engine.isRunning { engine.stop() }
+        if let source = sourceNode {
+            engine.detach(source)
+            sourceNode = nil
+        }
+        if let eqNode, eqNode.engine != nil {
+            engine.detach(eqNode)
+        }
+        // Drop the whole engine rather than disabling manual rendering on it:
+        // the next graph gets a clean instance.
+        engine = AVAudioEngine()
+    }
+
+    private func startIOProc() throws {
+        let ctx = renderer
         var procID: AudioDeviceIOProcID?
         let status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateDeviceID, nil) { _, inInput, _, outOutput, _ in
             ctx.process(input: inInput, output: outOutput)
@@ -673,29 +786,44 @@ final class AudioEngine: NSObject, ObservableObject {
         guard startStatus == noErr else {
             throw AudioRouteError.deviceStartFailed(startStatus)
         }
+    }
 
-        inputFormat = formatDescription(tapFormat)
-        outputFormat = "\(Int(outputASBD.mSampleRate / 1000))kHz \(outputASBD.mChannelsPerFrame)ch"
+    private func stopIOProc() {
+        guard let procID = ioProcID else { return }
+        AudioDeviceStop(aggregateDeviceID, procID)
+        AudioDeviceDestroyIOProcID(aggregateDeviceID, procID)
+        ioProcID = nil
     }
 
     private func stopProcessing() {
-        if let procID = ioProcID {
-            AudioDeviceStop(aggregateDeviceID, procID)
-            AudioDeviceDestroyIOProcID(aggregateDeviceID, procID)
-            ioProcID = nil
-        }
-        renderer.renderBlock = nil
-        renderer.renderBuffer = nil
+        stopIOProc()
+        teardownRenderGraph()
+    }
 
-        if engine.isRunning { engine.stop() }
-        if engine.manualRenderingMode == .realtime {
-            engine.disableManualRenderingMode()
+    /// Index of the tap's first buffer inside the aggregate device's *input*
+    /// stream configuration.
+    ///
+    /// An aggregate lists each sub-device's own input buffers before the tap's.
+    /// Most output devices have no inputs, so the tap normally starts at 0 —
+    /// but a device that also captures (the Xbox headset bridge publishes a
+    /// microphone alongside its output) shifts the tap along. Reading buffer 0
+    /// unconditionally then feeds the EQ that microphone instead of the system
+    /// audio, which sounds exactly like the device has been muted.
+    private func tapBufferOffset(tapChannels: UInt32) -> Int {
+        let aggregate = Self.inputBufferChannelCounts(deviceID: aggregateDeviceID)
+        let subDevice = Self.inputBufferChannelCounts(deviceID: selectedOutputDeviceID)
+
+        if subDevice.count < aggregate.count,
+           Array(aggregate.prefix(subDevice.count)) == subDevice {
+            return subDevice.count
         }
-        if let source = sourceNode {
-            engine.disconnectNodeOutput(source)
-            engine.detach(source)
-            sourceNode = nil
+
+        // Composition didn't line up (an unexpected aggregate layout): fall back
+        // to the first buffer whose width matches the tap's own format.
+        if let index = aggregate.firstIndex(of: tapChannels) {
+            return index
         }
+        return 0
     }
 
     private func tapStreamFormat() throws -> AudioStreamBasicDescription {
@@ -799,6 +927,16 @@ final class AudioEngine: NSObject, ObservableObject {
     }
 
     func applyPreset(_ preset: EQPreset) {
+        // A built-in preset is a curve, so it can be resampled onto whatever
+        // band layout the user is on — selecting one in 31-band mode keeps 31
+        // bands instead of snapping back to ten. Custom and imported presets
+        // only have a band list, so those still set the layout.
+        if let curve = preset.curve {
+            bands = curve.applied(to: bands)
+            applyAllBands()
+            return
+        }
+
         bands = preset.bands
         if eqNode.bands.count != bands.count {
             rebuildEQNode()
@@ -806,30 +944,32 @@ final class AudioEngine: NSObject, ObservableObject {
         applyAllBands()
     }
 
-    /// Swaps in a new EQ node when the band count changes. The processing graph
-    /// is torn down and rebuilt around it (the tap stays alive, so system audio
-    /// isn't interrupted beyond the swap itself).
+    /// Swaps in a new EQ node when the band count changes.
+    ///
+    /// Only the render graph is rebuilt — the IOProc, aggregate device and tap
+    /// all stay up. Stopping the IOProc here would deactivate the tap for good
+    /// and leave the output silently muted until the user toggled the engine
+    /// off and on again. The renderer emits silence for the few milliseconds
+    /// the graph is missing.
     private func rebuildEQNode() {
         let wasProcessing = isRunning
-        if wasProcessing { stopProcessing() }
+        if wasProcessing { teardownRenderGraph() }
 
-        if let existing = eqNode {
-            engine.detach(existing)
+        if let existing = eqNode, let owner = existing.engine {
+            owner.detach(existing)
         }
         eqNode = AVAudioUnitEQ(numberOfBands: bands.count)
-        engine.attach(eqNode)
         syncEQNode()
         applyMasterGain()
 
         guard wasProcessing else { return }
         do {
-            try startProcessing()
+            try buildRenderGraph()
             routeErrorMessage = nil
         } catch {
             routeErrorMessage = "\(error)"
-            NSLog("Failed to restart processing after EQ change: \(error)")
-            isRunning = false
-            teardownSystemAudioRoute()
+            NSLog("Failed to rebuild the EQ graph: \(error)")
+            stop()
         }
     }
 
@@ -896,11 +1036,27 @@ final class MeterState: ObservableObject {
 /// main-actor state.
 final class SystemAudioRenderer: @unchecked Sendable {
 
-    var renderBlock: AVAudioEngineManualRenderingBlock?
-    var renderBuffer: AVAudioPCMBuffer?
+    /// Swapped from the main actor while the IOProc keeps running, so it is
+    /// guarded by a lock the realtime thread only ever `try()`s.
+    private let renderLock = NSLock()
+    private var renderBlock: AVAudioEngineManualRenderingBlock?
+    private var renderBuffer: AVAudioPCMBuffer?
+
+    /// Points the IOProc at a new EQ graph (or, with `nil`, at silence while
+    /// one is being rebuilt). Blocks only for the length of one render call.
+    func setRenderTarget(block: AVAudioEngineManualRenderingBlock?, buffer: AVAudioPCMBuffer?) {
+        renderLock.lock()
+        renderBlock = block
+        renderBuffer = buffer
+        renderLock.unlock()
+    }
+
     var inputASBD = AudioStreamBasicDescription()
     var outputASBD = AudioStreamBasicDescription()
     var maxFrames: AVAudioFrameCount = 4096
+    /// Where the tap's buffers start inside the IOProc's input buffer list —
+    /// see `AudioEngine.tapBufferOffset(tapChannels:)`.
+    var inputBufferOffset: Int = 0
     private(set) var latencyMs: Double = 0
 
     /// The current IOProc cycle's captured audio, valid only for the duration
@@ -924,18 +1080,21 @@ final class SystemAudioRenderer: @unchecked Sendable {
         let out = UnsafeMutableAudioBufferListPointer(ablPtr)
 
         guard let input = capturedInput else {
-            for buffer in out {
-                if let data = buffer.mData {
-                    memset(data, 0, Int(buffer.mDataByteSize))
-                }
-            }
+            silence(out)
             return noErr
         }
 
         let src = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
         let inputIsInterleaved = (inputASBD.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0
+        guard src.count > 0 else {
+            silence(out)
+            return noErr
+        }
+        // Skip any buffers the aggregate's sub-device contributed ahead of the tap.
+        let offset = inputBufferOffset < src.count ? inputBufferOffset : 0
 
-        if inputIsInterleaved, let first = src.first, let base = first.mData {
+        if inputIsInterleaved, let base = src[offset].mData {
+            let first = src[offset]
             // One buffer holding L,R,L,R… — spread it across the graph's
             // separate per-channel buffers.
             let interleaved = base.assumingMemoryBound(to: Float.self)
@@ -956,8 +1115,9 @@ final class SystemAudioRenderer: @unchecked Sendable {
 
         for index in 0..<out.count {
             guard let dest = out[index].mData else { continue }
-            if index < src.count, let source = src[index].mData {
-                let bytes = min(Int(out[index].mDataByteSize), Int(src[index].mDataByteSize))
+            let sourceIndex = offset + index
+            if sourceIndex < src.count, let source = src[sourceIndex].mData {
+                let bytes = min(Int(out[index].mDataByteSize), Int(src[sourceIndex].mDataByteSize))
                 memcpy(dest, source, bytes)
                 if bytes < Int(out[index].mDataByteSize) {
                     memset(dest + bytes, 0, Int(out[index].mDataByteSize) - bytes)
@@ -987,10 +1147,22 @@ final class SystemAudioRenderer: @unchecked Sendable {
 
     /// The IOProc body: EQ the tap's audio and write it to the real device.
     func process(input: UnsafePointer<AudioBufferList>, output: UnsafeMutablePointer<AudioBufferList>) {
-        guard let renderBlock, let renderBuffer else { return }
-
         let outList = UnsafeMutableAudioBufferListPointer(output)
         guard let firstOut = outList.first else { return }
+
+        // Never leave the output buffers untouched: the IOProc stays alive
+        // across graph rebuilds, and whatever the device left there would play
+        // as noise.
+        guard renderLock.try() else {
+            silence(outList)
+            return
+        }
+        defer { renderLock.unlock() }
+
+        guard let renderBlock, let renderBuffer else {
+            silence(outList)
+            return
+        }
 
         let bytesPerFrame = max(1, outputASBD.mBytesPerFrame)
         let frames = AVAudioFrameCount(firstOut.mDataByteSize / bytesPerFrame)
