@@ -8,7 +8,9 @@ final class AudioEngine: NSObject, ObservableObject {
 
     // MARK: - Published State
 
-    @Published var bands: [EQBand] = EQPreset.defaultBands
+    @Published var bands: [EQBand] = EQPreset.defaultBands {
+        didSet { scheduleProfileCapture() }
+    }
     @Published var isBypassed: Bool = false
     @Published var isRunning: Bool = false
     /// Always tracks the system's current default output device — there is no
@@ -16,6 +18,8 @@ final class AudioEngine: NSObject, ObservableObject {
     @Published private(set) var selectedOutputDeviceID: AudioDeviceID = 0 {
         didSet {
             guard oldValue != selectedOutputDeviceID else { return }
+            flushProfileCapture(for: oldValue)
+            applyProfileForCurrentDevice()
             rebuildRoute()
         }
     }
@@ -39,6 +43,7 @@ final class AudioEngine: NSObject, ObservableObject {
         didSet {
             applyMasterGain()
             UserDefaults.standard.set(masterGain, forKey: Self.masterGainKey)
+            scheduleProfileCapture()
         }
     }
 
@@ -1050,6 +1055,101 @@ final class AudioEngine: NSObject, ObservableObject {
         )
     }
 
+    // MARK: - Device profiles
+
+    /// Set by the app at launch. Optional so the engine still works standalone
+    /// (previews, and the analyser tests that build this file on its own).
+    weak var deviceProfiles: DeviceProfileStore?
+
+    /// Guards against the capture/apply feedback loop: applying a profile
+    /// mutates `bands` and `masterGain`, which would otherwise schedule a
+    /// capture that immediately rewrites the profile being applied.
+    private var isApplyingProfile = false
+    private var profileCaptureTimer: Timer?
+
+    var currentDeviceUID: String? {
+        Self.getDeviceUID(deviceID: selectedOutputDeviceID) ?? Self.getDefaultOutputDeviceUID()
+    }
+
+    var currentDeviceName: String {
+        availableOutputDevices.first(where: { $0.id == selectedOutputDeviceID })?.name ?? "Unknown device"
+    }
+
+    var currentDeviceHasProfile: Bool {
+        guard let uid = currentDeviceUID else { return false }
+        return deviceProfiles?.profile(forUID: uid) != nil
+    }
+
+    /// Debounced: dragging a slider fires this on every frame of the drag, and
+    /// the profile only needs the value it lands on.
+    private func scheduleProfileCapture() {
+        guard !isApplyingProfile, deviceProfiles?.isEnabled == true else { return }
+        profileCaptureTimer?.invalidate()
+        profileCaptureTimer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.captureProfileForCurrentDevice() }
+        }
+    }
+
+    /// Capture is debounced, so an edit made in the second before switching
+    /// devices would otherwise be dropped: the timer fires after the switch,
+    /// by which point `bands` already belongs to the new device. Flush it
+    /// against the outgoing device instead.
+    private func flushProfileCapture(for deviceID: AudioDeviceID) {
+        guard profileCaptureTimer != nil else { return }
+        profileCaptureTimer?.invalidate()
+        profileCaptureTimer = nil
+
+        guard let store = deviceProfiles, store.isEnabled, !isApplyingProfile,
+              let uid = Self.getDeviceUID(deviceID: deviceID) else { return }
+        store.save(DeviceProfile(
+            deviceUID: uid,
+            deviceName: availableOutputDevices.first(where: { $0.id == deviceID })?.name ?? "Unknown device",
+            bands: bands,
+            masterGain: masterGain,
+            updatedAt: Date()
+        ))
+    }
+
+    func captureProfileForCurrentDevice() {
+        guard let store = deviceProfiles, store.isEnabled, let uid = currentDeviceUID else { return }
+        store.save(DeviceProfile(
+            deviceUID: uid,
+            deviceName: currentDeviceName,
+            bands: bands,
+            masterGain: masterGain,
+            updatedAt: Date()
+        ))
+    }
+
+    /// Applies the stored curve for whatever device is now the output. A
+    /// profile saved at a different band count goes through `rebuildEQNode()`,
+    /// the same teardown/build path `setBandCount` uses — never `stopIOProc`.
+    func applyProfileForCurrentDevice() {
+        guard let store = deviceProfiles, store.isEnabled,
+              let uid = currentDeviceUID,
+              let profile = store.profile(forUID: uid) else { return }
+
+        isApplyingProfile = true
+        defer { isApplyingProfile = false }
+
+        let countChanged = profile.bands.count != bands.count
+        bands = profile.bands
+        masterGain = min(Self.maxGain, max(0, profile.masterGain))
+
+        if countChanged {
+            rebuildEQNode()
+        } else {
+            applyAllBands()
+            applyMasterGain()
+        }
+        NSLog("Applied device profile for \(profile.deviceName)")
+    }
+
+    func forgetProfileForCurrentDevice() {
+        guard let uid = currentDeviceUID else { return }
+        deviceProfiles?.remove(uid: uid)
+    }
+
     /// Plain-text snapshot of the whole audio route, for pasting into a bug
     /// report or a chat when something sounds wrong.
     func diagnosticsReport() -> String {
@@ -1062,7 +1162,8 @@ final class AudioEngine: NSObject, ObservableObject {
             "Output format: \(outputFormat)",
             "Tap input:     \(inputFormat)",
             "Master gain:   \(String(format: "%.2fx (%+.1f dB)", masterGain, amplificationDB))",
-            "Bands:         \(bands.count)"
+            "Bands:         \(bands.count)",
+            "Device profile: \(currentDeviceHasProfile ? "saved" : "none")\(deviceProfiles?.isEnabled == false ? " (profiles off)" : "")"
         ]
         if let routeErrorMessage {
             lines.append("Route error:   \(routeErrorMessage)")

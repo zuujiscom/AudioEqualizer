@@ -6,6 +6,7 @@ import CoreAudio
 /// action is a re-enumerate.
 struct DeviceMenu: View {
     @EnvironmentObject private var engine: AudioEngine
+    @EnvironmentObject private var profiles: DeviceProfileStore
 
     var body: some View {
         Menu {
@@ -26,9 +27,40 @@ struct DeviceMenu: View {
 
             Divider()
 
+            Section("EQ profile") {
+                Toggle("Remember EQ per device", isOn: $profiles.isEnabled)
+
+                Button(engine.currentDeviceHasProfile ? "Update profile for this device" : "Save profile for this device") {
+                    engine.captureProfileForCurrentDevice()
+                }
+                .disabled(!profiles.isEnabled)
+
+                Button("Forget profile for this device") {
+                    engine.forgetProfileForCurrentDevice()
+                }
+                .disabled(!engine.currentDeviceHasProfile)
+
+                if !profiles.sortedProfiles.isEmpty {
+                    Menu("Saved profiles") {
+                        ForEach(profiles.sortedProfiles) { profile in
+                            Text("\(profile.deviceName) — \(profile.bands.count) bands")
+                        }
+                        Divider()
+                        Button("Forget all", role: .destructive) { profiles.removeAll() }
+                    }
+                }
+            }
+
+            Divider()
+
             Button("Refresh Devices") { engine.enumerateDevices() }
         } label: {
-            Label(currentOutputName, systemImage: engine.routeErrorMessage == nil ? "cable.connector" : "exclamationmark.triangle.fill")
+            Label(
+                currentOutputName,
+                systemImage: engine.routeErrorMessage != nil
+                    ? "exclamationmark.triangle.fill"
+                    : (engine.currentDeviceHasProfile && profiles.isEnabled ? "person.crop.circle.badge.checkmark" : "cable.connector")
+            )
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(engine.routeErrorMessage == nil ? Color.primary : Color.orange)
         }

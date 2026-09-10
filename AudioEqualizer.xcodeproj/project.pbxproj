@@ -12,8 +12,10 @@
 		100000000000000000000004 /* SpectrumAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000004 /* SpectrumAnalyzer.swift */; };
 		100000000000000000000005 /* AudioDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000005 /* AudioDevice.swift */; };
 		100000000000000000000006 /* EQBand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000006 /* EQBand.swift */; };
+		100000000000000000000041 /* DeviceProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000041 /* DeviceProfile.swift */; };
 		100000000000000000000007 /* EQPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000007 /* EQPreset.swift */; };
 		100000000000000000000008 /* PresetManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000008 /* PresetManager.swift */; };
+		100000000000000000000042 /* DeviceProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000042 /* DeviceProfileStore.swift */; };
 		100000000000000000000009 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000009 /* MainView.swift */; };
 		10000000000000000000000B /* SpectrumView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000B /* SpectrumView.swift */; };
 		100000000000000000000030 /* VisualizerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000030 /* VisualizerView.swift */; };
@@ -29,8 +31,10 @@
 		200000000000000000000004 /* SpectrumAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpectrumAnalyzer.swift; sourceTree = "<group>"; };
 		200000000000000000000005 /* AudioDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDevice.swift; sourceTree = "<group>"; };
 		200000000000000000000006 /* EQBand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQBand.swift; sourceTree = "<group>"; };
+		200000000000000000000041 /* DeviceProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceProfile.swift; sourceTree = "<group>"; };
 		200000000000000000000007 /* EQPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQPreset.swift; sourceTree = "<group>"; };
 		200000000000000000000008 /* PresetManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetManager.swift; sourceTree = "<group>"; };
+		200000000000000000000042 /* DeviceProfileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceProfileStore.swift; sourceTree = "<group>"; };
 		200000000000000000000009 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		20000000000000000000000B /* SpectrumView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpectrumView.swift; sourceTree = "<group>"; };
 		200000000000000000000030 /* VisualizerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualizerView.swift; sourceTree = "<group>"; };
@@ -97,6 +101,7 @@
 			children = (
 				200000000000000000000005 /* AudioDevice.swift */,
 				200000000000000000000006 /* EQBand.swift */,
+				200000000000000000000041 /* DeviceProfile.swift */,
 				200000000000000000000007 /* EQPreset.swift */,
 			);
 			path = Models;
@@ -106,6 +111,7 @@
 			isa = PBXGroup;
 			children = (
 				200000000000000000000008 /* PresetManager.swift */,
+				200000000000000000000042 /* DeviceProfileStore.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -215,8 +221,10 @@
 				100000000000000000000004 /* SpectrumAnalyzer.swift in Sources */,
 				100000000000000000000005 /* AudioDevice.swift in Sources */,
 				100000000000000000000006 /* EQBand.swift in Sources */,
+				100000000000000000000041 /* DeviceProfile.swift in Sources */,
 				100000000000000000000007 /* EQPreset.swift in Sources */,
 				100000000000000000000008 /* PresetManager.swift in Sources */,
+				100000000000000000000042 /* DeviceProfileStore.swift in Sources */,
 				100000000000000000000009 /* MainView.swift in Sources */,
 				10000000000000000000000B /* SpectrumView.swift in Sources */,
 				100000000000000000000030 /* VisualizerView.swift in Sources */,

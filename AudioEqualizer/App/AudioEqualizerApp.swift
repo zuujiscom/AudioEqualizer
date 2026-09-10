@@ -42,6 +42,7 @@ struct AudioEqualizerApp: App {
     @Environment(\.openWindow) private var openWindow
     @StateObject private var audioEngine = AudioEngine()
     @StateObject private var presetManager = PresetManager()
+    @StateObject private var deviceProfiles = DeviceProfileStore()
 
     var body: some Scene {
         WindowGroup {
@@ -49,7 +50,15 @@ struct AudioEqualizerApp: App {
                 .environmentObject(audioEngine)
                 .environmentObject(audioEngine.meters)
                 .environmentObject(presetManager)
+                .environmentObject(deviceProfiles)
                 .frame(minWidth: 900, minHeight: 640)
+                .task {
+                    // The engine's device didSet runs during init, before this
+                    // store exists, so the launch device is applied here.
+                    guard audioEngine.deviceProfiles == nil else { return }
+                    audioEngine.deviceProfiles = deviceProfiles
+                    audioEngine.applyProfileForCurrentDevice()
+                }
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))
