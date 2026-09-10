@@ -19,6 +19,16 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
     case bloom = "Bloom"
     case starfield = "Starfield"
     case matrix = "Matrix"
+    // Replicator — one cell duplicated across a layout
+    case burst = "Burst"
+    case helix = "Spiral"
+    case waveform = "Wave"
+    case grid = "Grid"
+    case scatter = "Scatter"
+    // Simulation — emitters driven by Motion-style forces
+    case orbitals = "Orbitals"
+    case swarm = "Swarm"
+    case cascade = "Cascade"
     // Shader — computed per pixel on the GPU
     case plasma = "Plasma"
     case kaleidoscope = "Kaleidoscope"
@@ -31,7 +41,50 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
 
     /// Point-sprite modes draw additively; the rest draw opaque geometry.
     var isParticle: Bool {
-        self == .bloom || self == .starfield || self == .matrix
+        switch self {
+        case .bloom, .starfield, .matrix, .orbitals, .swarm, .cascade: return true
+        default: return false
+        }
+    }
+
+    /// Non-nil for replicator modes: the whole look comes from this spec.
+    var replicatorSpec: ReplicatorSpec? {
+        switch self {
+        case .burst:
+            return ReplicatorSpec(cell: .bar, layout: .burst, count: 128, spin: 0.09,
+                                  size: 0.030, sequence: 1.4, sequenceOffset: 2.0, radius: 0.88)
+        case .helix:
+            return ReplicatorSpec(cell: .diamond, layout: .spiral, count: 260, spin: 0.20,
+                                  size: 0.026, sequence: 1.1, sequenceOffset: 4.5, radius: 0.94)
+        case .waveform:
+            return ReplicatorSpec(cell: .shard, layout: .wave, count: 180, spin: 0.45,
+                                  size: 0.030, sequence: 1.6, sequenceOffset: 3.0)
+        case .grid:
+            return ReplicatorSpec(cell: .quad, layout: .grid, count: 289, spin: 0,
+                                  size: 0.048, sequence: 1.7, sequenceOffset: 1.4)
+        case .scatter:
+            return ReplicatorSpec(cell: .triangle, layout: .scatter, count: 220, spin: 0.04,
+                                  size: 0.040, sequence: 1.5, sequenceOffset: 2.6)
+        default:
+            return nil
+        }
+    }
+
+    /// Non-nil for simulation modes: an emitter plus the forces acting on it.
+    var forceSpec: ForceField? {
+        switch self {
+        case .orbitals:
+            return ForceField(vortex: 0.30, orbit: 0.55, drag: 0.010,
+                              emitLayout: .ring, emitRadius: 0.5, rate: 9, lifetime: 0.004)
+        case .swarm:
+            return ForceField(attractor: 0.75, repel: 0.02, drag: 0.028, randomMotion: 0.55,
+                              emitLayout: .scatter, emitRadius: 0.9, rate: 12, lifetime: 0.005)
+        case .cascade:
+            return ForceField(gravity: 0.5, wind: SIMD2(0.1, 0), drag: 0.012, randomMotion: 0.12,
+                              emitLayout: .wave, emitRadius: 0.95, rate: 16, lifetime: 0.005)
+        default:
+            return nil
+        }
     }
 
     /// Full-screen fragment-shader modes: no CPU geometry at all.
@@ -59,6 +112,8 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
     var family: String {
         if self == .auto { return "Auto" }
         if isProcedural { return "Shader" }
+        if replicatorSpec != nil { return "Replicator" }
+        if forceSpec != nil { return "Simulation" }
         return isParticle ? "Particles" : "Geometric"
     }
 
@@ -67,10 +122,57 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
     static let storageKey = "visualizerMode"
 
     static var groups: [VisualizerModeGroup] {
-        ["Geometric", "Particles", "Shader"].map { family in
+        ["Geometric", "Replicator", "Simulation", "Particles", "Shader"].map { family in
             VisualizerModeGroup(id: family, modes: allCases.filter { $0.family == family })
         }
     }
+}
+
+// MARK: - Motion-style composition
+
+/// What is drawn at each element position. Everything is triangles so one
+/// pipeline covers every cell.
+enum VisualizerCell {
+    case quad, bar, triangle, diamond, shard
+}
+
+/// Where copies are placed — Motion's replicator shapes.
+enum ReplicatorLayout {
+    case burst, spiral, wave, grid, scatter, ring
+}
+
+/// One cell duplicated across a layout. Unlike an emitter, elements here have
+/// no birth or death: they are placed, and the spectrum drives their size and
+/// colour. `sequenceOffset` is Motion's Sequence Replicator idea — a per-element
+/// phase offset, so a wave of change travels through the pattern instead of
+/// every element pulsing together.
+struct ReplicatorSpec {
+    var cell: VisualizerCell = .quad
+    var layout: ReplicatorLayout = .burst
+    var count: Int = 96
+    var spin: Float = 0.1
+    var size: Float = 0.035
+    var sequence: Float = 1.2
+    var sequenceOffset: Float = 2.2
+    var radius: Float = 0.85
+}
+
+/// Motion's simulation behaviors as a force field applied to every particle.
+/// Attaching forces to the emitter rather than to each particle is what lets a
+/// few numbers produce completely different swarms.
+struct ForceField {
+    var vortex: Float = 0
+    var orbit: Float = 0
+    var attractor: Float = 0
+    var repel: Float = 0
+    var gravity: Float = 0
+    var wind: SIMD2<Float> = .zero
+    var drag: Float = 0.02
+    var randomMotion: Float = 0
+    var emitLayout: ReplicatorLayout = .ring
+    var emitRadius: Float = 0.4
+    var rate: Float = 10
+    var lifetime: Float = 0.006
 }
 
 /// A preset is a mode plus the feedback transform applied to the previous
@@ -106,6 +208,12 @@ struct VisualizerPreset {
             return VisualizerPreset(name: mode.rawValue, mode: mode, zoom: 1.01, decay: 0.92)
         case .matrix:
             return VisualizerPreset(name: mode.rawValue, mode: mode, decay: 0.84)
+        case .burst, .helix, .waveform, .grid, .scatter:
+            return VisualizerPreset(name: mode.rawValue, mode: mode, zoom: 1.008, rot: 0.003,
+                                    warp: 0.4, decay: 0.90)
+        case .orbitals, .swarm, .cascade:
+            return VisualizerPreset(name: mode.rawValue, mode: mode, zoom: 1.012, rot: 0.004,
+                                    decay: 0.93)
         default:
             return VisualizerPreset(name: mode.rawValue, mode: mode, decay: 0)
         }
@@ -128,7 +236,16 @@ struct VisualizerPreset {
         VisualizerPreset(name: "Warp Core", mode: .warp, zoom: 1.015, rot: 0.007, decay: 0.87, overlayAlpha: 0.5),
         VisualizerPreset(name: "Metaflow", mode: .metaballs, zoom: 1.012, rot: -0.004, warp: 0.8, decay: 0.88, overlayAlpha: 0.45),
         VisualizerPreset(name: "Ribbon Trails", mode: .ribbon, zoom: 1.01, rot: 0.009, warp: 1.2, decay: 0.95, paletteShift: 0.35),
-        VisualizerPreset(name: "Slow Burn", mode: .scope, zoom: 1.002, rot: -0.003, warp: 1.8, decay: 0.97, paletteShift: 0.8)
+        VisualizerPreset(name: "Slow Burn", mode: .scope, zoom: 1.002, rot: -0.003, warp: 1.8, decay: 0.97, paletteShift: 0.8),
+        // Replicators and simulations
+        VisualizerPreset(name: "Sunburst", mode: .burst, zoom: 1.018, rot: 0.006, warp: 0.5, decay: 0.93, paletteShift: 0.25),
+        VisualizerPreset(name: "Double Helix", mode: .helix, zoom: 1.01, rot: -0.012, warp: 0.7, decay: 0.94, paletteShift: 0.5),
+        VisualizerPreset(name: "Signal Wave", mode: .waveform, zoom: 1.006, warp: 1.0, dx: 0.4, decay: 0.94, paletteShift: 0.65),
+        VisualizerPreset(name: "Lattice", mode: .grid, zoom: 1.022, rot: 0.008, decay: 0.90, paletteShift: 0.15),
+        VisualizerPreset(name: "Confetti", mode: .scatter, zoom: 1.014, rot: -0.007, warp: 1.3, decay: 0.92, paletteShift: 0.85),
+        VisualizerPreset(name: "Orbit Cloud", mode: .orbitals, zoom: 1.02, rot: 0.005, warp: 0.6, decay: 0.95),
+        VisualizerPreset(name: "Swarm", mode: .swarm, zoom: 1.016, rot: -0.009, warp: 0.9, decay: 0.95, paletteShift: 0.4),
+        VisualizerPreset(name: "Downpour", mode: .cascade, zoom: 0.997, dy: 0.5, decay: 0.93, paletteShift: 0.7)
     ]
 }
 
@@ -422,8 +539,11 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
     private var particles: [Particle] = []
     private var stars: [Particle] = []
     private var drops: [Particle] = []
+    private var simParticles: [Particle] = []
     private var smoothedSpectrum = [Float](repeating: 0, count: 64)
     private var bassEnvelope: Float = 0
+    /// Smoothed overall energy; scales the master clock.
+    private var audioMotion: Float = 0
     private var lastBass: Float = 0
     private var phase: Float = 0
 
@@ -676,7 +796,14 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
     // MARK: Frame state
 
     private func advance(frame: VisualizerFrame) {
-        phase += 0.012
+        // The clock is driven by the audio, not by wall time. Every time-based
+        // motion in every mode reads `phase`, so with no sound nothing moves
+        // anywhere: shader patterns, replicator spin, the sequence wave and the
+        // feedback ripple all stop together. A visual that animates in silence
+        // is decoration, not a visualiser.
+        let energy = max(frame.level, bassEnvelope)
+        audioMotion += (energy - audioMotion) * (energy > audioMotion ? 0.45 : 0.06)
+        phase += 0.012 * min(3.0, audioMotion * 3.4)
 
         // Attack fast, release slow: a kick should snap and then fall away.
         for i in smoothedSpectrum.indices where i < frame.spectrum.count {
@@ -696,12 +823,16 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
         if active != .bloom { particles.removeAll(keepingCapacity: true) }
         if active != .starfield { stars.removeAll(keepingCapacity: true) }
         if active != .matrix { drops.removeAll(keepingCapacity: true) }
+        if active.forceSpec == nil { simParticles.removeAll(keepingCapacity: true) }
 
         switch active {
         case .bloom: advanceBloom(rising: rising)
         case .starfield: advanceStars(level: frame.level)
         case .matrix: advanceDrops()
-        default: break
+        default:
+            if let forces = active.forceSpec {
+                advanceSimulation(forces, level: frame.level)
+            }
         }
     }
 
@@ -731,7 +862,7 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
     /// Continuous emission from the centre, accelerating outward — flying
     /// through stars, with the throttle on overall level.
     private func advanceStars(level: Float) {
-        let spawn = 3 + Int(level * 14)
+        let spawn = Int(level * 17)
         if stars.count < 1200 {
             for _ in 0..<spawn {
                 let angle = Float.random(in: 0..<(2 * .pi))
@@ -790,7 +921,12 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
         case .bloom: buildPoints(particles, aspect: aspect, base: 6, growth: 26, alpha: 0.85)
         case .starfield: buildStars(aspect: aspect)
         case .matrix: buildPoints(drops, aspect: aspect, base: 3, growth: 9, alpha: 0.9)
-        default: break
+        default:
+            if let spec = mode.replicatorSpec {
+                buildReplicator(spec, aspect: aspect)
+            } else if mode.forceSpec != nil {
+                buildPoints(simParticles, aspect: aspect, base: 4, growth: 16, alpha: 0.8)
+            }
         }
     }
 
@@ -989,6 +1125,171 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
                 size: 1.5 + distance * 7 + bassEnvelope * 10
             ))
         }
+    }
+
+    // MARK: Replicators
+
+    private func stableHash(_ i: Int) -> Float {
+        let x = sin(Float(i) * 127.1) * 43758.5453
+        return x - floor(x)
+    }
+
+    private func layoutPosition(_ spec: ReplicatorSpec, index: Int, t: Float,
+                                energy: Float, aspect: Float) -> SIMD2<Float> {
+        let spin = phase * spec.spin * 8
+        switch spec.layout {
+        case .burst:
+            let angle = t * 2 * .pi + spin
+            let r = spec.radius * (0.22 + energy * 0.85)
+            return SIMD2(cos(angle) * r / aspect, sin(angle) * r)
+        case .spiral:
+            let angle = t * 4 * 2 * .pi + spin
+            let r = spec.radius * t
+            return SIMD2(cos(angle) * r / aspect, sin(angle) * r)
+        case .wave:
+            let x = -1 + 2 * t
+            let y = sin(t * 6 * .pi + spin) * (0.2 + energy * 0.6)
+            return SIMD2(x * 0.96, y)
+        case .grid:
+            let cols = max(1, Int(ceil(sqrt(Float(spec.count)))))
+            let row = index / cols
+            let col = index % cols
+            let x = (Float(col) + 0.5) / Float(cols) * 2 - 1
+            let y = (Float(row) + 0.5) / Float(cols) * 2 - 1
+            return SIMD2(x * 0.92 / aspect, y * 0.92)
+        case .scatter:
+            let x = stableHash(index * 2) * 2 - 1
+            let y = stableHash(index * 2 + 1) * 2 - 1
+            return SIMD2(x * 0.92 / aspect, y * 0.92)
+        case .ring:
+            let angle = t * 2 * .pi + spin
+            return SIMD2(cos(angle) * spec.radius / aspect, sin(angle) * spec.radius)
+        }
+    }
+
+    /// One cell, as triangles, centred on `at` and rotated by `angle`.
+    private func addCell(_ cell: VisualizerCell, at position: SIMD2<Float>, size: Float,
+                         angle: Float, color c: SIMD4<Float>, aspect: Float) {
+        let cosA = cos(angle)
+        let sinA = sin(angle)
+        func place(_ x: Float, _ y: Float) -> SIMD2<Float> {
+            let rx = x * cosA - y * sinA
+            let ry = x * sinA + y * cosA
+            return SIMD2(position.x + rx / aspect, position.y + ry)
+        }
+        func tri(_ a: SIMD2<Float>, _ b: SIMD2<Float>, _ d: SIMD2<Float>) {
+            vertices.append(VisualizerVertex(pos: a, color: c, size: 1))
+            vertices.append(VisualizerVertex(pos: b, color: c, size: 1))
+            vertices.append(VisualizerVertex(pos: d, color: c, size: 1))
+        }
+
+        switch cell {
+        case .quad:
+            let p0 = place(-size, -size), p1 = place(size, -size)
+            let p2 = place(-size, size), p3 = place(size, size)
+            tri(p0, p1, p2); tri(p1, p3, p2)
+        case .bar:
+            let w = size * 0.38, h = size * 2.4
+            let p0 = place(-w, -h), p1 = place(w, -h)
+            let p2 = place(-w, h), p3 = place(w, h)
+            tri(p0, p1, p2); tri(p1, p3, p2)
+        case .triangle:
+            tri(place(0, size * 1.3), place(-size, -size * 0.8), place(size, -size * 0.8))
+        case .diamond:
+            let p0 = place(0, size * 1.5), p1 = place(size, 0)
+            let p2 = place(0, -size * 1.5), p3 = place(-size, 0)
+            tri(p0, p1, p3); tri(p1, p2, p3)
+        case .shard:
+            let w = size * 0.5
+            tri(place(0, size * 2.0), place(-w, 0), place(w, 0))
+            tri(place(0, -size * 1.2), place(-w, 0), place(w, 0))
+        }
+    }
+
+    private func buildReplicator(_ spec: ReplicatorSpec, aspect: Float) {
+        let bins = smoothedSpectrum.count
+        let count = max(2, spec.count)
+        for i in 0..<count {
+            let t = Float(i) / Float(count - 1)
+            let energy = smoothedSpectrum[min(bins - 1, i * bins / count)]
+
+            // Sequence Replicator: a travelling wave of scale across elements,
+            // so the pattern ripples rather than pulsing all at once.
+            let seq = 0.5 + 0.5 * sin(phase * 3 - t * spec.sequenceOffset * .pi)
+            let scale = spec.size * (energy * spec.sequence * 2.1) * (0.55 + 0.75 * seq)
+            guard scale > 0.0005 else { continue }
+
+            let position = layoutPosition(spec, index: i, t: t, energy: energy, aspect: aspect)
+            // Radial layouts read better with cells facing outward.
+            let angle: Float
+            switch spec.layout {
+            case .burst, .spiral, .ring: angle = atan2(position.y, position.x) - .pi / 2
+            case .wave, .grid, .scatter: angle = seq * 0.6
+            }
+            addCell(spec.cell, at: position, size: scale, angle: angle,
+                    color: color(at: t, alpha: 0.45 + energy * 0.7), aspect: aspect)
+        }
+    }
+
+    // MARK: Simulation behaviors
+
+    private func emitPosition(_ spec: ForceField, t: Float, index: Int) -> SIMD2<Float> {
+        switch spec.emitLayout {
+        case .ring, .burst, .spiral:
+            let angle = t * 2 * .pi
+            return SIMD2(cos(angle), sin(angle)) * spec.emitRadius
+        case .wave:
+            return SIMD2((t * 2 - 1) * spec.emitRadius, 1.0)
+        case .grid, .scatter:
+            return SIMD2(stableHash(index * 2) * 2 - 1, stableHash(index * 2 + 1) * 2 - 1)
+                * spec.emitRadius
+        }
+    }
+
+    /// Motion's forces, integrated per particle. Each term is one behavior:
+    /// Vortex swirls around the centre, Orbit Around adds an inward bias so
+    /// particles circle rather than fly off, Attractor pulls in, Repel pushes
+    /// out, and Gravity, Wind, Drag and Random Motion do what they say.
+    private func advanceSimulation(_ spec: ForceField, level: Float) {
+        let spawn = Int(spec.rate * level * 2.6)
+        if simParticles.count < 2400 && spawn > 0 {
+            for k in 0..<spawn {
+                let t = Float.random(in: 0...1)
+                simParticles.append(Particle(
+                    pos: emitPosition(spec, t: t, index: simParticles.count + k),
+                    velocity: SIMD2(Float.random(in: -0.06...0.06), Float.random(in: -0.06...0.06)),
+                    life: 1,
+                    hue: t
+                ))
+            }
+        }
+
+        let dt: Float = 1.0 / 60.0
+        let drive = 1 + bassEnvelope * 1.4
+        for i in simParticles.indices {
+            var particle = simParticles[i]
+            let r = max(0.04, sqrt(particle.pos.x * particle.pos.x + particle.pos.y * particle.pos.y))
+            let normal = SIMD2(particle.pos.x / r, particle.pos.y / r)
+            let tangent = SIMD2(-normal.y, normal.x)
+
+            var accel = SIMD2<Float>(0, 0)
+            if spec.vortex != 0 { accel += tangent * (spec.vortex / r) }
+            if spec.orbit != 0 { accel += (tangent - normal * 0.35) * spec.orbit }
+            if spec.attractor != 0 { accel -= normal * spec.attractor }
+            if spec.repel != 0 { accel += normal * (spec.repel / (r * r)) }
+            if spec.gravity != 0 { accel.y -= spec.gravity }
+            accel += spec.wind
+            if spec.randomMotion != 0 {
+                accel += SIMD2(Float.random(in: -1...1), Float.random(in: -1...1)) * spec.randomMotion
+            }
+
+            particle.velocity += accel * drive * dt
+            particle.velocity *= (1 - spec.drag)
+            particle.pos += particle.velocity * dt
+            particle.life -= spec.lifetime
+            simParticles[i] = particle
+        }
+        simParticles.removeAll { $0.life <= 0 || abs($0.pos.x) > 1.7 || abs($0.pos.y) > 1.7 }
     }
 
     private func ensureBuffer(count: Int) -> MTLBuffer? {

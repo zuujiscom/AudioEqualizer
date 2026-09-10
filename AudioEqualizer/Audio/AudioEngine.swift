@@ -808,6 +808,7 @@ final class AudioEngine: NSObject, ObservableObject {
     }
 
     private func stopProcessing() {
+        renderer.clearAnalysisBuffer()
         stopIOProc()
         teardownRenderGraph()
     }
@@ -1000,7 +1001,8 @@ final class AudioEngine: NSObject, ObservableObject {
     /// long, which is tuned for frequency resolution and smears exactly the
     /// transients a beat-reactive visual needs to land on time.
     func visualizerFrame(waveformCount: Int = 256) -> VisualizerFrame {
-        guard let buffer = renderer.copyLatestFrames(),
+        guard isRunning,
+              let buffer = renderer.copyLatestFrames(),
               let channel = buffer.floatChannelData?[0] else {
             return VisualizerFrame(waveform: [Float](repeating: 0, count: waveformCount),
                                    spectrum: [Float](repeating: 0, count: 64),
@@ -1349,6 +1351,17 @@ final class SystemAudioRenderer: @unchecked Sendable {
 
         scratchSampleRate = buffer.format.sampleRate
         latencyMs = Double(frames) / buffer.format.sampleRate * 1000
+    }
+
+    /// Drop everything captured so far. Without this the ring keeps handing out
+    /// the last frames it saw long after the engine stopped, so meters and the
+    /// visualizer animate from a frozen snapshot and look live when they are not.
+    func clearAnalysisBuffer() {
+        scratchLock.lock()
+        defer { scratchLock.unlock() }
+        for i in scratch.indices { scratch[i] = 0 }
+        scratchWriteIndex = 0
+        scratchFilled = false
     }
 
     /// Snapshot of the most recent rendered audio, oldest sample first, for
