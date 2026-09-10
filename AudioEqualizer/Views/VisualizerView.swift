@@ -5,6 +5,7 @@ import simd
 // MARK: - Modes
 
 enum VisualizerMode: String, CaseIterable, Identifiable {
+    // Geometric
     case bars = "Bars"
     case mirror = "Mirror"
     case radial = "Radial"
@@ -12,9 +13,17 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
     case scope = "Scope"
     case lissajous = "Lissajous"
     case ribbon = "Ribbon"
+    // Particles
     case bloom = "Bloom"
     case starfield = "Starfield"
     case matrix = "Matrix"
+    // Shader — computed per pixel on the GPU
+    case plasma = "Plasma"
+    case kaleidoscope = "Kaleidoscope"
+    case aurora = "Aurora"
+    case nebula = "Nebula"
+    case metaballs = "Metaballs"
+    case warp = "Warp"
 
     var id: String { rawValue }
 
@@ -23,7 +32,38 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
         self == .bloom || self == .starfield || self == .matrix
     }
 
-    /// ⌘1…⌘9 then ⌘0, in declaration order.
+    /// Full-screen fragment-shader modes: no CPU geometry at all.
+    var isProcedural: Bool { proceduralIndex != nil }
+
+    var proceduralIndex: Int32? {
+        switch self {
+        case .plasma: return 0
+        case .kaleidoscope: return 1
+        case .aurora: return 2
+        case .nebula: return 3
+        case .metaballs: return 4
+        case .warp: return 5
+        default: return nil
+        }
+    }
+
+    /// How much of the previous frame is erased each tick. Low values leave
+    /// long light-trails, which is most of what makes a visualizer read as
+    /// "glowing" rather than as a bar chart.
+    var trailFade: Float {
+        switch self {
+        case .bars, .mirror: return 0.70
+        case .radial: return 0.30
+        case .tunnel: return 0.22
+        case .scope, .ribbon: return 0.13
+        case .lissajous: return 0.07
+        case .bloom, .starfield: return 0.09
+        case .matrix: return 0.16
+        default: return 1
+        }
+    }
+
+    /// ⌘⌥1…⌘⌥9 then ⌘⌥0 for the first ten; the rest are click-only.
     var shortcut: KeyEquivalent? {
         guard let index = Self.allCases.firstIndex(of: self) else { return nil }
         let digits: [KeyEquivalent] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
@@ -31,10 +71,8 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
     }
 
     var family: String {
-        switch self {
-        case .bars, .mirror, .radial, .tunnel, .scope, .lissajous, .ribbon: return "Geometric"
-        case .bloom, .starfield, .matrix: return "Particles"
-        }
+        if isProcedural { return "Shader" }
+        return isParticle ? "Particles" : "Geometric"
     }
 
     /// Shared with `VisualizerWindow`'s `@AppStorage`, so picking a mode from
@@ -42,7 +80,7 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
     static let storageKey = "visualizerMode"
 
     static var groups: [VisualizerModeGroup] {
-        ["Geometric", "Particles"].map { family in
+        ["Geometric", "Particles", "Shader"].map { family in
             VisualizerModeGroup(id: family, modes: allCases.filter { $0.family == family })
         }
     }
@@ -63,12 +101,35 @@ private struct VisualizerVertex {
     var size: Float
 }
 
+/// Matches `Uniforms` in the shader: five floats then an int, 24-byte stride.
+private struct VisualizerUniforms {
+    var time: Float
+    var bass: Float
+    var level: Float
+    var aspect: Float
+    var fade: Float
+    var mode: Int32
+}
+
 private let shaderSource = """
 #include <metal_stdlib>
 using namespace metal;
 
 struct VIn { float2 pos; float4 color; float size; };
 struct VOut { float4 position [[position]]; float4 color; float pointSize [[point_size]]; };
+
+struct Uniforms {
+    float time;
+    float bass;
+    float level;
+    float aspect;
+    float fade;
+    int mode;
+};
+
+struct FS { float4 position [[position]]; float2 uv; };
+
+// --- CPU geometry ---
 
 vertex VOut v_main(const device VIn* verts [[buffer(0)]], uint vid [[vertex_id]]) {
     VOut o;
@@ -84,8 +145,154 @@ fragment float4 f_solid(VOut in [[stage_in]]) {
 
 fragment float4 f_point(VOut in [[stage_in]], float2 pc [[point_coord]]) {
     float d = length(pc - float2(0.5, 0.5));
-    float a = smoothstep(0.5, 0.0, d);
-    return float4(in.color.rgb, in.color.a * a);
+    // Two-lobe falloff: a tight core inside a wide halo reads as glow.
+    float core = smoothstep(0.5, 0.0, d);
+    float halo = smoothstep(0.5, 0.15, d);
+    return float4(in.color.rgb, in.color.a * (core * 0.55 + halo * 0.75));
+}
+
+// --- Full-screen passes ---
+
+vertex FS v_full(uint vid [[vertex_id]]) {
+    float2 p = float2(float((vid << 1) & 2), float(vid & 2));
+    FS o;
+    o.position = float4(p * 2.0 - 1.0, 0.0, 1.0);
+    // Flip y so uv matches Metal's top-left texture origin.
+    o.uv = float2(p.x, 1.0 - p.y);
+    return o;
+}
+
+/// Painting black at low alpha is what leaves trails behind moving geometry.
+fragment float4 f_fade(FS in [[stage_in]], constant Uniforms& u [[buffer(0)]]) {
+    return float4(0.0, 0.0, 0.0, u.fade);
+}
+
+fragment float4 f_composite(FS in [[stage_in]], texture2d<float> tex [[texture(0)]]) {
+    constexpr sampler smp(address::clamp_to_edge, filter::linear);
+    float3 c = tex.sample(smp, in.uv).rgb;
+    // Gentle filmic lift so bright cores bloom instead of clipping flat.
+    c = c / (c + 0.75) * 1.75;
+    return float4(c, 1.0);
+}
+
+// --- Helpers ---
+
+static float hash21(float2 p) {
+    return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123);
+}
+
+static float vnoise(float2 p) {
+    float2 i = floor(p);
+    float2 f = fract(p);
+    float2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash21(i), hash21(i + float2(1.0, 0.0)), u.x),
+               mix(hash21(i + float2(0.0, 1.0)), hash21(i + float2(1.0, 1.0)), u.x), u.y);
+}
+
+static float fbm(float2 p) {
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 5; i++) {
+        v += a * vnoise(p);
+        p *= 2.02;
+        a *= 0.5;
+    }
+    return v;
+}
+
+/// Cosine gradient palette — smooth, saturated, and cheap.
+static float3 palette(float t, float shift) {
+    float3 d = float3(0.0, 0.33, 0.67) + shift;
+    return 0.5 + 0.5 * cos(6.28318 * (t + d));
+}
+
+static float bandAt(const device float* spectrum, float x) {
+    float f = clamp(x, 0.0, 0.9999) * 63.0;
+    int i = int(f);
+    return mix(spectrum[i], spectrum[min(i + 1, 63)], fract(f));
+}
+
+// --- Procedural modes ---
+
+fragment float4 f_procedural(FS in [[stage_in]],
+                             constant Uniforms& u [[buffer(0)]],
+                             const device float* spectrum [[buffer(1)]]) {
+    float2 uv = in.uv;
+    float2 p = (uv - 0.5) * float2(u.aspect, 1.0);
+    float t = u.time;
+    float3 col = float3(0.0);
+
+    if (u.mode == 0) {
+        // Plasma: interfering waves, pushed around by bass.
+        float2 q = p * 3.0;
+        float v = sin(q.x + t)
+                + sin(q.y * 1.3 + t * 0.9)
+                + sin((q.x + q.y) * 0.8 + t * 1.3)
+                + sin(length(q) * 2.0 - t * 1.7 * (1.0 + u.bass));
+        v *= 0.25;
+        float band = bandAt(spectrum, uv.x);
+        col = palette(v * 0.5 + t * 0.02, 0.0) * (0.35 + u.level * 1.1 + band * 0.9);
+    } else if (u.mode == 1) {
+        // Kaleidoscope: fold the plane into wedges, then ring it by spectrum.
+        float r = length(p);
+        float a = atan2(p.y, p.x);
+        float seg = 6.28318 / 10.0;
+        a = abs(fmod(a + t * 0.15 + 100.0 * seg, seg) - seg * 0.5);
+        float2 q = float2(cos(a), sin(a)) * r;
+        float band = bandAt(spectrum, r * 1.7);
+        float pattern = 0.5 + 0.5 * sin(q.x * 26.0 - t * 2.0 + band * 10.0);
+        float rings = 0.5 + 0.5 * sin(r * 34.0 - t * 3.0);
+        col = palette(r * 1.4 + t * 0.05, 0.2) * (0.2 + band * 2.4) * (0.45 + 0.55 * pattern * rings);
+        col *= smoothstep(1.05, 0.1, r);
+    } else if (u.mode == 2) {
+        // Aurora: drifting curtains whose height follows the spectrum.
+        float y = 1.0 - uv.y;
+        float band = bandAt(spectrum, uv.x);
+        float n = fbm(float2(uv.x * 3.0, y * 1.6 - t * 0.22));
+        float crest = 0.18 + n * 0.42 + band * 0.55;
+        float glow = exp(-abs(y - crest) * 7.5);
+        float veil = exp(-abs(y - crest * 0.6) * 3.0) * 0.35;
+        col = palette(uv.x * 0.6 + t * 0.03, 0.35) * (glow + veil) * (0.8 + u.level * 2.0);
+        col += float3(0.02, 0.05, 0.12) * (1.0 - y);
+    } else if (u.mode == 3) {
+        // Nebula: domain-warped noise, breathing on bass.
+        float2 q = p * 2.2;
+        float tt = t * 0.06;
+        float warp = fbm(q * 0.8 - tt);
+        float n = fbm(q * 1.5 + float2(tt, -tt) + warp * 1.2);
+        float d = length(q);
+        col = palette(n + u.bass * 0.3, 0.5) * pow(n, 2.0) * 2.6;
+        col *= smoothstep(1.7, 0.1, d);
+        col += palette(n, 0.5) * u.bass * 0.6 * exp(-d * 2.0);
+    } else if (u.mode == 4) {
+        // Metaballs: seven blobs, each swollen by its own band.
+        float2 q = p * 2.0;
+        float field = 0.0;
+        for (int i = 0; i < 7; i++) {
+            float fi = float(i);
+            float band = spectrum[int(fi * 9.0)];
+            float ang = t * (0.3 + fi * 0.07) + fi * 1.7;
+            float2 c = float2(cos(ang), sin(ang * 1.3)) * (0.3 + 0.4 * sin(t * 0.2 + fi));
+            float rad = 0.10 + band * 0.38 + u.bass * 0.06;
+            float2 delta = q - c;
+            field += (rad * rad) / max(1e-4, dot(delta, delta));
+        }
+        float m = smoothstep(0.75, 1.7, field);
+        float edge = smoothstep(1.7, 0.95, field);
+        col = palette(field * 0.22 + t * 0.03, 0.15) * m * (0.7 + u.level);
+        col += palette(field * 0.22, 0.15) * edge * 0.5;
+    } else {
+        // Warp: a tunnel, with the throttle on bass.
+        float r = max(0.02, length(p));
+        float a = atan2(p.y, p.x);
+        float z = 0.35 / r + t * 0.6 * (1.0 + u.bass * 0.8);
+        float band = bandAt(spectrum, fract(z * 0.15));
+        float stripes = 0.5 + 0.5 * sin(z * 6.0 + sin(a * 5.0 + t) * 1.2);
+        col = palette(fract(z * 0.08), 0.6) * stripes * (0.25 + band * 2.2);
+        col *= smoothstep(0.0, 0.22, r) * smoothstep(1.25, 0.28, r);
+    }
+
+    return float4(col, 1.0);
 }
 """
 
@@ -112,6 +319,9 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
     private let commandQueue: MTLCommandQueue
     private let solidPipeline: MTLRenderPipelineState
     private let pointPipeline: MTLRenderPipelineState
+    private let fadePipeline: MTLRenderPipelineState
+    private let compositePipeline: MTLRenderPipelineState
+    private let proceduralPipeline: MTLRenderPipelineState
 
     private var vertices: [VisualizerVertex] = []
     private var vertexBuffer: MTLBuffer?
@@ -125,45 +335,101 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
     private var lastBass: Float = 0
     private var phase: Float = 0
 
+    private let device: MTLDevice
+    private let pixelFormat: MTLPixelFormat
+    private let uniformBuffer: MTLBuffer
+    private let spectrumBuffer: MTLBuffer
+
+    /// Geometry accumulates here instead of straight into the drawable: the
+    /// swap chain rotates through several drawables, so "last frame" only
+    /// exists if we keep it ourselves. This is what makes trails possible.
+    private var accumTexture: MTLTexture?
+    private var accumNeedsClear = true
+
     init?(device: MTLDevice, pixelFormat: MTLPixelFormat) {
         guard let queue = device.makeCommandQueue(),
               let library = try? device.makeLibrary(source: shaderSource, options: nil),
               let vfn = library.makeFunction(name: "v_main"),
+              let vfull = library.makeFunction(name: "v_full"),
               let solidFn = library.makeFunction(name: "f_solid"),
-              let pointFn = library.makeFunction(name: "f_point") else { return nil }
-        commandQueue = queue
+              let pointFn = library.makeFunction(name: "f_point"),
+              let fadeFn = library.makeFunction(name: "f_fade"),
+              let compFn = library.makeFunction(name: "f_composite"),
+              let procFn = library.makeFunction(name: "f_procedural"),
+              let uniforms = device.makeBuffer(length: MemoryLayout<VisualizerUniforms>.stride,
+                                               options: .storageModeShared),
+              let spectrum = device.makeBuffer(length: 64 * MemoryLayout<Float>.stride,
+                                               options: .storageModeShared)
+        else { return nil }
 
-        func pipeline(_ fragment: MTLFunction, additive: Bool) -> MTLRenderPipelineState? {
+        self.device = device
+        self.pixelFormat = pixelFormat
+        commandQueue = queue
+        uniformBuffer = uniforms
+        spectrumBuffer = spectrum
+
+        func pipeline(_ vertex: MTLFunction, _ fragment: MTLFunction, blend: BlendMode) -> MTLRenderPipelineState? {
             let desc = MTLRenderPipelineDescriptor()
-            desc.vertexFunction = vfn
+            desc.vertexFunction = vertex
             desc.fragmentFunction = fragment
-            let attachment = desc.colorAttachments[0]!
+            guard let attachment = desc.colorAttachments[0] else { return nil }
             attachment.pixelFormat = pixelFormat
-            attachment.isBlendingEnabled = true
-            attachment.rgbBlendOperation = .add
-            attachment.alphaBlendOperation = .add
-            attachment.sourceRGBBlendFactor = .sourceAlpha
-            attachment.sourceAlphaBlendFactor = .sourceAlpha
-            // Additive keeps overlapping particles blooming instead of flattening.
-            attachment.destinationRGBBlendFactor = additive ? .one : .oneMinusSourceAlpha
-            attachment.destinationAlphaBlendFactor = additive ? .one : .oneMinusSourceAlpha
+            switch blend {
+            case .none:
+                attachment.isBlendingEnabled = false
+            case .alpha, .additive:
+                attachment.isBlendingEnabled = true
+                attachment.rgbBlendOperation = .add
+                attachment.alphaBlendOperation = .add
+                attachment.sourceRGBBlendFactor = .sourceAlpha
+                attachment.sourceAlphaBlendFactor = .sourceAlpha
+                let dst: MTLBlendFactor = blend == .additive ? .one : .oneMinusSourceAlpha
+                attachment.destinationRGBBlendFactor = dst
+                attachment.destinationAlphaBlendFactor = dst
+            }
             return try? device.makeRenderPipelineState(descriptor: desc)
         }
 
-        guard let solid = pipeline(solidFn, additive: false),
-              let point = pipeline(pointFn, additive: true) else { return nil }
+        guard let solid = pipeline(vfn, solidFn, blend: .alpha),
+              let point = pipeline(vfn, pointFn, blend: .additive),
+              let fade = pipeline(vfull, fadeFn, blend: .alpha),
+              let comp = pipeline(vfull, compFn, blend: .none),
+              let proc = pipeline(vfull, procFn, blend: .none) else { return nil }
+
         solidPipeline = solid
         pointPipeline = point
+        fadePipeline = fade
+        compositePipeline = comp
+        proceduralPipeline = proc
         super.init()
     }
 
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { }
+    private enum BlendMode { case none, alpha, additive }
+
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+        accumTexture = nil
+    }
+
+    private func ensureAccum(size: CGSize) -> MTLTexture? {
+        let width = max(1, Int(size.width))
+        let height = max(1, Int(size.height))
+        if let texture = accumTexture, texture.width == width, texture.height == height {
+            return texture
+        }
+        let desc = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: pixelFormat, width: width, height: height, mipmapped: false
+        )
+        desc.usage = [.renderTarget, .shaderRead]
+        desc.storageMode = .private
+        accumTexture = device.makeTexture(descriptor: desc)
+        accumNeedsClear = true
+        return accumTexture
+    }
 
     func draw(in view: MTKView) {
-        guard let descriptor = view.currentRenderPassDescriptor,
-              let drawable = view.currentDrawable,
-              let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else { return }
+        guard let drawable = view.currentDrawable,
+              let accum = ensureAccum(size: view.drawableSize),
+              let commandBuffer = commandQueue.makeCommandBuffer() else { return }
 
         let frame = frameProvider?() ?? VisualizerFrame(
             waveform: [Float](repeating: 0, count: 256),
@@ -171,26 +437,80 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
             bass: 0, level: 0
         )
 
+        let aspect = Float(view.drawableSize.width / max(1, view.drawableSize.height))
         advance(frame: frame)
-        buildVertices(frame: frame, aspect: Float(view.drawableSize.width / max(1, view.drawableSize.height)))
+        uploadUniforms(aspect: aspect, frame: frame)
 
-        if !vertices.isEmpty, let buffer = ensureBuffer(count: vertices.count) {
-            buffer.contents().copyMemory(
-                from: vertices,
-                byteCount: vertices.count * MemoryLayout<VisualizerVertex>.stride
-            )
-            encoder.setRenderPipelineState(mode.isParticle ? pointPipeline : solidPipeline)
-            encoder.setVertexBuffer(buffer, offset: 0, index: 0)
-            encoder.drawPrimitives(
-                type: mode.isParticle ? .point : .triangle,
-                vertexStart: 0,
-                vertexCount: vertices.count
-            )
+        // Pass 1 — everything lands in the accumulation texture.
+        let scenePass = MTLRenderPassDescriptor()
+        scenePass.colorAttachments[0].texture = accum
+        scenePass.colorAttachments[0].loadAction = accumNeedsClear ? .clear : .load
+        scenePass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        scenePass.colorAttachments[0].storeAction = .store
+        accumNeedsClear = false
+
+        if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: scenePass) {
+            if mode.isProcedural {
+                encoder.setRenderPipelineState(proceduralPipeline)
+                encoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 0)
+                encoder.setFragmentBuffer(spectrumBuffer, offset: 0, index: 1)
+                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+            } else {
+                encoder.setRenderPipelineState(fadePipeline)
+                encoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 0)
+                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+
+                buildVertices(frame: frame, aspect: aspect)
+                if !vertices.isEmpty, let buffer = ensureBuffer(count: vertices.count) {
+                    buffer.contents().copyMemory(
+                        from: vertices,
+                        byteCount: vertices.count * MemoryLayout<VisualizerVertex>.stride
+                    )
+                    encoder.setRenderPipelineState(mode.isParticle ? pointPipeline : solidPipeline)
+                    encoder.setVertexBuffer(buffer, offset: 0, index: 0)
+                    encoder.drawPrimitives(
+                        type: mode.isParticle ? .point : .triangle,
+                        vertexStart: 0,
+                        vertexCount: vertices.count
+                    )
+                }
+            }
+            encoder.endEncoding()
         }
 
-        encoder.endEncoding()
+        // Pass 2 — tone-map the accumulation onto the drawable.
+        if let present = view.currentRenderPassDescriptor {
+            present.colorAttachments[0].loadAction = .dontCare
+            if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: present) {
+                encoder.setRenderPipelineState(compositePipeline)
+                encoder.setFragmentTexture(accum, index: 0)
+                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                encoder.endEncoding()
+            }
+        }
+
         commandBuffer.present(drawable)
         commandBuffer.commit()
+    }
+
+    private func uploadUniforms(aspect: Float, frame: VisualizerFrame) {
+        var uniforms = VisualizerUniforms(
+            time: phase * 4,
+            bass: bassEnvelope,
+            level: frame.level,
+            aspect: aspect,
+            fade: mode.trailFade,
+            mode: mode.proceduralIndex ?? 0
+        )
+        uniformBuffer.contents().copyMemory(
+            from: &uniforms, byteCount: MemoryLayout<VisualizerUniforms>.stride
+        )
+        smoothedSpectrum.withUnsafeBufferPointer { src in
+            guard let base = src.baseAddress else { return }
+            spectrumBuffer.contents().copyMemory(
+                from: base, byteCount: min(64, src.count) * MemoryLayout<Float>.stride
+            )
+        }
     }
 
     // MARK: Frame state
@@ -295,6 +615,7 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
 
     private func buildVertices(frame: VisualizerFrame, aspect: Float) {
         vertices.removeAll(keepingCapacity: true)
+        guard !mode.isProcedural else { return }
         switch mode {
         case .bars: buildBars()
         case .mirror: buildMirror()
@@ -306,6 +627,7 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
         case .bloom: buildPoints(particles, aspect: aspect, base: 6, growth: 26, alpha: 0.85)
         case .starfield: buildStars(aspect: aspect)
         case .matrix: buildPoints(drops, aspect: aspect, base: 3, growth: 9, alpha: 0.9)
+        default: break
         }
     }
 
@@ -509,13 +831,13 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
     private func ensureBuffer(count: Int) -> MTLBuffer? {
         if let buffer = vertexBuffer, count <= vertexCapacity { return buffer }
         let capacity = max(count, vertexCapacity * 2, 4096)
-        guard let device = solidPipeline.device.makeBuffer(
+        guard let created = device.makeBuffer(
             length: capacity * MemoryLayout<VisualizerVertex>.stride,
             options: .storageModeShared
         ) else { return nil }
-        vertexBuffer = device
+        vertexBuffer = created
         vertexCapacity = capacity
-        return device
+        return created
     }
 }
 
