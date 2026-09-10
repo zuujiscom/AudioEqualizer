@@ -2,24 +2,44 @@ import SwiftUI
 
 /// AppKit re-adds View and Help after SwiftUI builds the menu bar, so
 /// `CommandGroup(replacing:)` cannot remove them — they have to be pulled off
-/// `NSApp.mainMenu` once launching is done.
+/// `NSApp.mainMenu` directly.
+///
+/// Stripping once at launch is not enough: SwiftUI rebuilds the entire main
+/// menu whenever `.commands` re-evaluates, and the Engine menu's title depends
+/// on `isRunning`, so a rebuild lands every time the engine starts or stops and
+/// both menus come back. The strip therefore re-runs on the application update
+/// notification, guarded by an item count so the common case is one compare.
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var strippedItemCount = -1
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.helpMenu = nil
-        DispatchQueue.main.async {
-            guard let mainMenu = NSApp.mainMenu else { return }
-            for title in ["View", "Help"] {
-                if let item = mainMenu.items.first(where: { $0.title == title }) {
-                    mainMenu.removeItem(item)
-                }
+        stripMenus()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(stripMenus),
+            name: NSApplication.didUpdateNotification,
+            object: nil
+        )
+    }
+
+    @objc private func stripMenus() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+        guard mainMenu.items.count != strippedItemCount else { return }
+
+        for title in ["View", "Help"] {
+            if let item = mainMenu.items.first(where: { $0.title == title }) {
+                mainMenu.removeItem(item)
             }
         }
+        NSApp.helpMenu = nil
+        strippedItemCount = mainMenu.items.count
     }
 }
 
 @main
 struct AudioEqualizerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.openWindow) private var openWindow
     @StateObject private var audioEngine = AudioEngine()
     @StateObject private var presetManager = PresetManager()
 
@@ -125,6 +145,8 @@ struct AudioEqualizerApp: App {
                 }
                 .keyboardShortcut("r", modifiers: [.command])
 
+                Divider()
+
                 Button("Copy Diagnostics") {
                     let text = audioEngine.diagnosticsReport()
                     NSPasteboard.general.clearContents()
@@ -137,7 +159,45 @@ struct AudioEqualizerApp: App {
                     Text(audioEngine.outputFormat)
                 }
             }
+
+            CommandMenu("Visualizer") {
+                Button("Open Visualizer") {
+                    openVisualizerWindow()
+                }
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+
+                Divider()
+
+                // Selecting a mode also opens the window, so the menu works as
+                // a launcher rather than only as a switch for a window already
+                // on screen.
+                ForEach(VisualizerMode.groups) { group in
+                    Section(group.id) {
+                        ForEach(group.modes) { mode in
+                            Button {
+                                UserDefaults.standard.set(mode.rawValue, forKey: VisualizerMode.storageKey)
+                                openVisualizerWindow()
+                            } label: {
+                                Text(mode.rawValue)
+                            }
+                            .keyboardShortcut(mode.shortcut ?? "0", modifiers: [.command, .option])
+                        }
+                    }
+                }
+            }
         }
+
+        Window("Visualizer", id: Self.visualizerWindowID) {
+            VisualizerWindow()
+                .environmentObject(audioEngine)
+        }
+        .defaultSize(width: 960, height: 600)
+    }
+
+    static let visualizerWindowID = "visualizer"
+
+    private func openVisualizerWindow() {
+        openWindow(id: Self.visualizerWindowID)
     }
 }
 

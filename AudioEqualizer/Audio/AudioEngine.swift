@@ -38,8 +38,13 @@ final class AudioEngine: NSObject, ObservableObject {
     @Published var masterGain: Double = 1.0 {
         didSet {
             applyMasterGain()
+            UserDefaults.standard.set(masterGain, forKey: Self.masterGainKey)
         }
     }
+
+    /// Master gain survives relaunch; band curves do not — those are what
+    /// presets are for.
+    private static let masterGainKey = "masterGain"
 
     static let maxGain: Double = 15.85   // ≈ +24 dB
     static let maxBandGain: Double = 24.0
@@ -116,6 +121,13 @@ final class AudioEngine: NSObject, ObservableObject {
 
     override init() {
         super.init()
+
+        // Assign the backing store directly: the didSet would write straight
+        // back to defaults, and `eqNode` does not exist yet for applyMasterGain.
+        if UserDefaults.standard.object(forKey: Self.masterGainKey) != nil {
+            let stored = UserDefaults.standard.double(forKey: Self.masterGainKey)
+            _masterGain = Published(initialValue: min(Self.maxGain, max(0, stored)))
+        }
 
         enumerateDevices()
         setupEngine()
@@ -980,6 +992,62 @@ final class AudioEngine: NSObject, ObservableObject {
         applyAllBands()
     }
 
+    /// One frame of data for the visualizer, pulled at display rate rather
+    /// than the 20 Hz meter rate.
+    ///
+    /// The spectrum comes from the shared 2,048-point analyzer, but `bass` and
+    /// `level` are computed from the newest samples only: that window is 42.7 ms
+    /// long, which is tuned for frequency resolution and smears exactly the
+    /// transients a beat-reactive visual needs to land on time.
+    func visualizerFrame(waveformCount: Int = 256) -> VisualizerFrame {
+        guard let buffer = renderer.copyLatestFrames(),
+              let channel = buffer.floatChannelData?[0] else {
+            return VisualizerFrame(waveform: [Float](repeating: 0, count: waveformCount),
+                                   spectrum: [Float](repeating: 0, count: 64),
+                                   bass: 0, level: 0)
+        }
+
+        let total = Int(buffer.frameLength)
+        guard total > 0 else {
+            return VisualizerFrame(waveform: [Float](repeating: 0, count: waveformCount),
+                                   spectrum: [Float](repeating: 0, count: 64),
+                                   bass: 0, level: 0)
+        }
+
+        // Waveform: decimate the whole window down to the vertex count.
+        var waveform = [Float](repeating: 0, count: waveformCount)
+        for i in 0..<waveformCount {
+            let idx = total > waveformCount ? i * total / waveformCount : min(i, total - 1)
+            waveform[i] = channel[idx]
+        }
+
+        // Short tail for transient response, plus a one-pole low pass at
+        // roughly 150 Hz for the bass term.
+        let tail = min(total, 512)
+        let start = total - tail
+        var sum: Float = 0
+        var bassSum: Float = 0
+        var lp: Float = 0
+        let sampleRate = Float(buffer.format.sampleRate > 0 ? buffer.format.sampleRate : 48000)
+        let alpha = min(1, 2 * .pi * 150 / sampleRate)
+        for i in start..<total {
+            let x = channel[i]
+            sum += x * x
+            lp += alpha * (x - lp)
+            bassSum += lp * lp
+        }
+
+        let level = sqrtf(sum / Float(tail))
+        let bass = sqrtf(bassSum / Float(tail))
+
+        return VisualizerFrame(
+            waveform: waveform,
+            spectrum: fftAnalyzer.analyze(buffer: buffer),
+            bass: min(1, bass * 6),
+            level: min(1, level * 3)
+        )
+    }
+
     /// Plain-text snapshot of the whole audio route, for pasting into a bug
     /// report or a chat when something sounds wrong.
     func diagnosticsReport() -> String {
@@ -1043,6 +1111,14 @@ final class AudioEngine: NSObject, ObservableObject {
 }
 
 // MARK: - Meters
+
+/// Display-rate data for the visualizer window.
+struct VisualizerFrame {
+    var waveform: [Float]
+    var spectrum: [Float]
+    var bass: Float
+    var level: Float
+}
 
 struct MeterSnapshot {
     var spectrum: [Float] = Array(repeating: 0, count: 64)

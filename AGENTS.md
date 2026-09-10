@@ -19,6 +19,7 @@ Do not lower the deployment target without replacing or conditionally compiling 
 - `AudioEqualizer/Audio/SpectrumAnalyzer.swift`: reusable 2,048-sample FFT and RMS helpers. It returns 64 normalized spectrum bins, spaced logarithmically from 20 Hz to min(20 kHz, Nyquist) and rebuilt whenever the tap's sample rate changes. `SystemAudioRenderer.analysisWindow` must match the FFT size or the tail of each window is zero-padding.
 - `AudioEqualizer/Models/`: `EQBand`, built-in `EQPreset` definitions and frequency layouts, plus `AudioDevice`.
 - `AudioEqualizer/ViewModels/PresetManager.swift`: custom preset CRUD and JSON import/export. Persistent presets live in the user's Application Support `AudioEqualizer/presets.json`, never in the repository.
+- `AudioEqualizer/Views/VisualizerView.swift`: the Visualizer window — a Metal renderer with ten modes in two families (geometric and particle). Shaders are compiled at runtime from a source string, so there is no `.metal` file to register and no dependency; vertices are built on the CPU each frame and the layout must stay in step with `VIn` in the shader (float2 at 0, float4 at 16, float at 32, 48-byte stride).
 - `AudioEqualizer/Views/`: SwiftUI presentation. Views mutate the engine through its public control methods or the binding pattern in `BandControlsView`. Presets, the output device readout, and engine status live in `HeaderBar` (`MainView.swift`) rather than a sidebar column; `PresetSectionView.swift` and `DeviceSelectionView.swift` hold those header components despite their historical names.
 - `AudioEqualizer/Resources/`: app metadata, assets, and entitlements. The app sandbox is intentionally disabled because system-wide Core Audio routing needs direct hardware access.
 
@@ -54,6 +55,9 @@ The output-device listener updates `selectedOutputDeviceID`; while running, the 
 - Gain is clamped to `-24...24 dB`; bandwidth is clamped to `0.1...5.0`; master gain is a multiplier limited to `15.85` (about `+24 dB`) and applied through `AVAudioUnitEQ.globalGain`.
 - `isBypassed` changes each EQ filter's bypass state; it does not tear down the system route. `toggleBypass()` has no UI — it is engine-level API only, and the header status popover just reports the flag.
 - Meter updates belong on `MeterState`, not `AudioEngine`, to avoid invalidating all slider views ~20 times per second.
+- `visualizerFrame()` is pulled at display rate, not the 20 Hz meter rate. Its `bass` and `level` come from the newest 512 samples through a ~150 Hz one-pole filter rather than the 2,048-sample FFT window: that window is tuned for frequency resolution and smears the transients a beat-reactive visual has to land on.
+- `master gain` persists to `UserDefaults`; band curves do not. `init()` assigns the backing store directly, because the `didSet` would write straight back and `eqNode` does not exist yet.
+- SwiftUI rebuilds the whole main menu whenever `.commands` re-evaluates, and the Engine menu title depends on `isRunning`. Anything removed from `NSApp.mainMenu` (View, Help) must therefore be re-stripped, not stripped once at launch — see `AppDelegate`.
 - Built-in presets are `EQCurve`s — control points interpolated on a log-frequency axis — not fixed band lists. `applyPreset` resamples the curve onto the current layout, so selecting a preset in 31-band mode keeps 31 bands. Custom and imported presets have `curve == nil` and still set the band list (and therefore the layout).
 - Preset curves are written to be roughly tone-neutral in level. A preset that lifts every band is a volume control, and on top of the master gain it only buys clipping.
 - Built-in presets are recreated in memory. Only custom presets are persisted. Imported JSON must decode as a single `EQPreset`.
@@ -71,5 +75,6 @@ The output-device listener updates `selectedOutputDeviceID`; while running, the 
 ## Repository hygiene
 
 - Keep source under the existing app folders and do not commit Xcode user-state or DerivedData files.
+- The project is `objectVersion 56` with no file-system-synchronized groups, so a new source file must be hand-registered in `project.pbxproj` in four places: `PBXBuildFile`, `PBXFileReference`, the owning `PBXGroup`'s children, and the target's `PBXSourcesBuildPhase`. Verify with `plutil -lint` afterwards.
 - Preserve the existing SwiftUI style and inline comments; comments around Core Audio lifecycle code document real safety constraints.
 - There is currently no README. Keep this file focused on implementation context; add user-facing setup or product documentation separately when requested.
