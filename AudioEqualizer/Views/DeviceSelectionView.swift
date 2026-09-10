@@ -1,64 +1,40 @@
 import SwiftUI
 import CoreAudio
 
-struct DeviceSelectionView: View {
+/// Header-bar device readout. `selectedOutputDeviceID` is `private(set)` and
+/// tracks the system default output, so this stays informational — the only
+/// action is a re-enumerate.
+struct DeviceMenu: View {
     @EnvironmentObject private var engine: AudioEngine
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label("Devices", systemImage: "cable.connector")
-                    .font(.headline)
-                Spacer()
+        Menu {
+            Section("Output") {
+                Text(currentOutputName)
+                Text(engine.outputFormat)
             }
 
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("OUTPUT")
-                        .font(.caption2).foregroundStyle(.secondary)
-                    Text(currentOutputName)
-                        .font(.system(size: 12, weight: .medium))
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Divider().frame(height: 30)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("FORMAT")
-                        .font(.caption2).foregroundStyle(.secondary)
-                    Text(engine.outputFormat)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                .fixedSize()
+            Section("Tap input") {
+                Text(engine.inputFormat)
             }
 
             if let routeError = engine.routeErrorMessage {
-                Text("⚠︎ \(routeError)")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-                    .lineLimit(2)
+                Section("Route error") {
+                    Text(routeError)
+                }
             }
 
-            HStack {
-                Button("Refresh Devices") { engine.enumerateDevices() }
-                    .controlSize(.small)
-                Spacer()
-                Text(engine.isRunning ? "✓ Running" : "Stopped")
-                    .font(.caption)
-                    .foregroundStyle(engine.isRunning ? Color.green : Color.secondary)
-            }
+            Divider()
+
+            Button("Refresh Devices") { engine.enumerateDevices() }
+        } label: {
+            Label(currentOutputName, systemImage: engine.routeErrorMessage == nil ? "cable.connector" : "exclamationmark.triangle.fill")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(engine.routeErrorMessage == nil ? Color.primary : Color.orange)
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color.primary.opacity(0.08))
-        )
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help(engine.routeErrorMessage ?? "Output device")
     }
 
     private var currentOutputName: String {

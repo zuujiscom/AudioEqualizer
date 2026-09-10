@@ -11,16 +11,8 @@ struct MainView: View {
             ScrollView {
                 VStack(spacing: 20) {
                     SpectrumView()
-                    HStack(alignment: .top, spacing: 20) {
-                        BandControlsView()
-                            .frame(maxWidth: .infinity)
-                        VStack(spacing: 20) {
-                            PresetSectionView()
-                            DeviceSelectionView()
-                            StatusView()
-                        }
-                        .frame(width: 280)
-                    }
+                    BandControlsView()
+                        .frame(maxWidth: .infinity)
                 }
                 .padding(16)
             }
@@ -32,14 +24,14 @@ struct MainView: View {
 
 // MARK: - Header Bar
 
+/// Presets, devices, and status all live here now; the former right-hand
+/// column is gone, so the band sliders get the full window width.
 struct HeaderBar: View {
     @EnvironmentObject private var engine: AudioEngine
     @EnvironmentObject private var presets: PresetManager
 
-    @State private var showPresetPicker = false
-
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             // Power / engine status
             Button {
                 engine.isRunning ? engine.stop() : engine.start()
@@ -55,32 +47,9 @@ struct HeaderBar: View {
 
             Divider().frame(height: 24)
 
-            // Preset picker
-            Menu {
-                Picker("", selection: $presets.selectedPresetID) {
-                    ForEach(presets.allPresets) { preset in
-                        Text(preset.name)
-                            .tag(Optional<UUID>(preset.id))
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.inline)
-
-                Divider()
-
-                Button("Save Current as Preset…") {
-                    saveCurrentAsPreset()
-                }
-                Button("Import…") { importPreset() }
-            } label: {
-                Label(
-                    presets.selectedPreset?.name ?? "Presets",
-                    systemImage: "slider.horizontal.3"
-                )
-                .font(.system(size: 12, weight: .medium))
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            PresetMenu()
+            DeviceMenu()
+            StatusMenu()
 
             Spacer()
 
@@ -91,13 +60,14 @@ struct HeaderBar: View {
                 Text(String(format: "%+0.1f dB", engine.amplificationDB))
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .monospacedDigit()
-                Text("x%.1f".format1(engine.masterGain))
+                Text(String(format: "x%.1f", engine.masterGain))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(RoundedRectangle(cornerRadius: 6).fill(Color.green.opacity(0.08)))
+
 
             // Status dot
             Circle()
@@ -113,40 +83,6 @@ struct HeaderBar: View {
                 engine.applyPreset(preset)
             }
         }
-    }
-
-    private func saveCurrentAsPreset() {
-        let alert = NSAlert()
-        alert.messageText = "Save Preset"
-        alert.informativeText = "Name your custom preset:"
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
-        textField.placeholderString = "My Preset"
-        alert.accessoryView = textField
-        alert.window.initialFirstResponder = textField
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            let name = textField.stringValue
-            presets.savePreset(name: name.isEmpty ? "Untitled" : name, bands: engine.bands)
-        }
-    }
-
-    private func importPreset() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.allowsMultipleSelection = false
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            presets.importPreset(from: url)
-        }
-    }
-}
-
-private extension String {
-    func format1(_ value: Double) -> String {
-        String(format: self, value)
     }
 }
 
@@ -173,5 +109,6 @@ struct VolumeSlider: View {
 #Preview {
     MainView()
         .environmentObject(AudioEngine())
+        .environmentObject(AudioEngine().meters)
         .environmentObject(PresetManager())
 }

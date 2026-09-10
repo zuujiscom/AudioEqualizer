@@ -17,6 +17,9 @@ final class PresetManager: ObservableObject {
         loadPresets()
     }
 
+    /// Where custom presets live on disk, for the File > Reveal command.
+    var presetsFileURL: URL { storageURL }
+
     var allPresets: [EQPreset] {
         EQPreset.allBuiltin + customPresets
     }

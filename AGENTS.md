@@ -16,10 +16,10 @@ Do not lower the deployment target without replacing or conditionally compiling 
 
 - `AudioEqualizer/App/AudioEqualizerApp.swift`: app entry point. Creates and injects one `AudioEngine`, `MeterState`, and `PresetManager`.
 - `AudioEqualizer/Audio/AudioEngine.swift`: the central audio lifecycle, Core Audio device monitoring, EQ state, route creation, manual AVAudioEngine rendering, realtime renderer, and metering state.
-- `AudioEqualizer/Audio/SpectrumAnalyzer.swift`: reusable 1,024-sample FFT and RMS helpers. It returns 64 normalized spectrum bins.
+- `AudioEqualizer/Audio/SpectrumAnalyzer.swift`: reusable 2,048-sample FFT and RMS helpers. It returns 64 normalized spectrum bins, spaced logarithmically from 20 Hz to min(20 kHz, Nyquist) and rebuilt whenever the tap's sample rate changes. `SystemAudioRenderer.analysisWindow` must match the FFT size or the tail of each window is zero-padding.
 - `AudioEqualizer/Models/`: `EQBand`, built-in `EQPreset` definitions and frequency layouts, plus `AudioDevice`.
 - `AudioEqualizer/ViewModels/PresetManager.swift`: custom preset CRUD and JSON import/export. Persistent presets live in the user's Application Support `AudioEqualizer/presets.json`, never in the repository.
-- `AudioEqualizer/Views/`: SwiftUI presentation. Views mutate the engine through its public control methods or the binding pattern in `BandControlsView`.
+- `AudioEqualizer/Views/`: SwiftUI presentation. Views mutate the engine through its public control methods or the binding pattern in `BandControlsView`. Presets, the output device readout, and engine status live in `HeaderBar` (`MainView.swift`) rather than a sidebar column; `PresetSectionView.swift` and `DeviceSelectionView.swift` hold those header components despite their historical names.
 - `AudioEqualizer/Resources/`: app metadata, assets, and entitlements. The app sandbox is intentionally disabled because system-wide Core Audio routing needs direct hardware access.
 
 ## Audio path and lifecycle
@@ -52,7 +52,7 @@ The output-device listener updates `selectedOutputDeviceID`; while running, the 
 - `bands` is the source of truth. Call `applyBandToNode(_:)` after a single-band mutation or `applyAllBands()` after a batch mutation.
 - Changing band count replaces the EQ node because `AVAudioUnitEQ` has a fixed band count. Preserve nearest old-band settings, as `setBandCount(_:)` does.
 - Gain is clamped to `-24...24 dB`; bandwidth is clamped to `0.1...5.0`; master gain is a multiplier limited to `15.85` (about `+24 dB`) and applied through `AVAudioUnitEQ.globalGain`.
-- `isBypassed` changes each EQ filter's bypass state; it does not tear down the system route.
+- `isBypassed` changes each EQ filter's bypass state; it does not tear down the system route. `toggleBypass()` has no UI — it is engine-level API only, and the header status popover just reports the flag.
 - Meter updates belong on `MeterState`, not `AudioEngine`, to avoid invalidating all slider views ~20 times per second.
 - Built-in presets are `EQCurve`s — control points interpolated on a log-frequency axis — not fixed band lists. `applyPreset` resamples the curve onto the current layout, so selecting a preset in 31-band mode keeps 31 bands. Custom and imported presets have `curve == nil` and still set the band list (and therefore the layout).
 - Preset curves are written to be roughly tone-neutral in level. A preset that lifts every band is a volume control, and on top of the master gain it only buys clipping.
@@ -62,7 +62,7 @@ The output-device listener updates `selectedOutputDeviceID`; while running, the 
 ## Validation checklist
 
 - Build the `AudioEqualizer` scheme after Swift or project-setting changes.
-- Manually test audio changes on a machine that supports process taps: Start, play system audio, alter a band and master gain, toggle bypass, Stop, then confirm ordinary system audio still plays.
+- Manually test audio changes on a machine that supports process taps: Start, play system audio, alter a band and master gain, Stop, then confirm ordinary system audio still plays.
 - Change the macOS default output while running and verify the app follows it. Test a route-creation failure or Stop after Start to ensure no tap/aggregate is left behind.
 - For UI work, check 10-, 15-, and 31-band modes plus the horizontal slider scroll layout.
 - Switching band count and applying presets **while running** is the regression-prone path: verify audio keeps playing without toggling the engine off and on.

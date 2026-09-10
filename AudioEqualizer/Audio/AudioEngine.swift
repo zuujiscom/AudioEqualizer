@@ -980,6 +980,32 @@ final class AudioEngine: NSObject, ObservableObject {
         applyAllBands()
     }
 
+    /// Plain-text snapshot of the whole audio route, for pasting into a bug
+    /// report or a chat when something sounds wrong.
+    func diagnosticsReport() -> String {
+        let device = availableOutputDevices.first(where: { $0.id == selectedOutputDeviceID })
+        var lines: [String] = [
+            "Audio Equalizer diagnostics",
+            "Engine:        \(isRunning ? "running" : "stopped")",
+            "Bypass:        \(isBypassed ? "active" : "off")",
+            "Output device: \(device?.name ?? "—")\(device?.isBuiltIn == true ? " (built-in)" : "")",
+            "Output format: \(outputFormat)",
+            "Tap input:     \(inputFormat)",
+            "Master gain:   \(String(format: "%.2fx (%+.1f dB)", masterGain, amplificationDB))",
+            "Bands:         \(bands.count)"
+        ]
+        if let routeErrorMessage {
+            lines.append("Route error:   \(routeErrorMessage)")
+        }
+        lines.append("")
+        lines.append("Band gains (Hz: dB)")
+        for band in bands {
+            let state = band.isEnabled ? "" : "  [disabled]"
+            lines.append(String(format: "  %8.0f: %+5.1f%@", band.frequency, band.gain, state))
+        }
+        return lines.joined(separator: "\n")
+    }
+
     func toggleBypass() {
         isBypassed.toggle()
         guard let eqNode else { return }
@@ -1066,7 +1092,8 @@ final class SystemAudioRenderer: @unchecked Sendable {
     /// Rolling window of recent rendered mono samples. Sized for one FFT window
     /// so the spectrum always has a full frame to analyse, regardless of the
     /// device's IO buffer size.
-    private static let analysisWindow = 1024
+    /// Must match the FFT size in `SpectrumAnalyzer`; see the note there.
+    private static let analysisWindow = 2048
     private let scratchLock = NSLock()
     private var scratch = [Float](repeating: 0, count: SystemAudioRenderer.analysisWindow)
     private var scratchWriteIndex = 0
