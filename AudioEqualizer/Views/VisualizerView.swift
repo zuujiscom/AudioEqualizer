@@ -5,6 +5,8 @@ import simd
 // MARK: - Modes
 
 enum VisualizerMode: String, CaseIterable, Identifiable {
+    /// Cycles `VisualizerPreset.rotation` on a timer, switching on a beat.
+    case auto = "Auto"
     // Geometric
     case bars = "Bars"
     case mirror = "Mirror"
@@ -47,22 +49,6 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
         }
     }
 
-    /// How much of the previous frame is erased each tick. Low values leave
-    /// long light-trails, which is most of what makes a visualizer read as
-    /// "glowing" rather than as a bar chart.
-    var trailFade: Float {
-        switch self {
-        case .bars, .mirror: return 0.70
-        case .radial: return 0.30
-        case .tunnel: return 0.22
-        case .scope, .ribbon: return 0.13
-        case .lissajous: return 0.07
-        case .bloom, .starfield: return 0.09
-        case .matrix: return 0.16
-        default: return 1
-        }
-    }
-
     /// ⌘⌥1…⌘⌥9 then ⌘⌥0 for the first ten; the rest are click-only.
     var shortcut: KeyEquivalent? {
         guard let index = Self.allCases.firstIndex(of: self) else { return nil }
@@ -71,6 +57,7 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
     }
 
     var family: String {
+        if self == .auto { return "Auto" }
         if isProcedural { return "Shader" }
         return isParticle ? "Particles" : "Geometric"
     }
@@ -84,6 +71,65 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
             VisualizerModeGroup(id: family, modes: allCases.filter { $0.family == family })
         }
     }
+}
+
+/// A preset is a mode plus the feedback transform applied to the previous
+/// frame. The same geometry looks completely different tunnelled, spiralled or
+/// smeared, which is how G-Force and MilkDrop got so much variety out of a
+/// handful of primitives.
+struct VisualizerPreset {
+    var name: String
+    var mode: VisualizerMode
+    var zoom: Float = 1
+    var rot: Float = 0
+    var warp: Float = 0
+    var dx: Float = 0
+    var dy: Float = 0
+    var decay: Float = 0.90
+    var paletteShift: Float = 0
+    var overlayAlpha: Float = 1
+
+    /// Sensible feedback for a mode chosen by hand from the menu.
+    static func standard(for mode: VisualizerMode) -> VisualizerPreset {
+        switch mode {
+        case .bars, .mirror:
+            return VisualizerPreset(name: mode.rawValue, mode: mode, zoom: 1.004, decay: 0.55)
+        case .radial:
+            return VisualizerPreset(name: mode.rawValue, mode: mode, zoom: 1.012, rot: 0.004, decay: 0.86)
+        case .tunnel:
+            return VisualizerPreset(name: mode.rawValue, mode: mode, zoom: 1.02, decay: 0.88)
+        case .scope, .ribbon:
+            return VisualizerPreset(name: mode.rawValue, mode: mode, zoom: 1.006, warp: 0.5, decay: 0.93)
+        case .lissajous:
+            return VisualizerPreset(name: mode.rawValue, mode: mode, zoom: 1.008, rot: 0.006, warp: 0.7, decay: 0.95)
+        case .bloom, .starfield:
+            return VisualizerPreset(name: mode.rawValue, mode: mode, zoom: 1.01, decay: 0.92)
+        case .matrix:
+            return VisualizerPreset(name: mode.rawValue, mode: mode, decay: 0.84)
+        default:
+            return VisualizerPreset(name: mode.rawValue, mode: mode, decay: 0)
+        }
+    }
+
+    /// The Auto rotation. Deliberately varied: tunnels, spirals, drifts and
+    /// layered shader beds, so consecutive presets do not look alike.
+    static let rotation: [VisualizerPreset] = [
+        VisualizerPreset(name: "Vortex", mode: .radial, zoom: 1.03, rot: 0.013, warp: 0.6, decay: 0.94),
+        VisualizerPreset(name: "Deep Tunnel", mode: .tunnel, zoom: 1.045, rot: -0.006, decay: 0.93, paletteShift: 0.3),
+        VisualizerPreset(name: "Silk", mode: .lissajous, zoom: 1.006, rot: 0.011, warp: 1.4, decay: 0.96, paletteShift: 0.6),
+        VisualizerPreset(name: "Ion Storm", mode: .bloom, zoom: 1.028, rot: -0.014, warp: 0.9, decay: 0.95),
+        VisualizerPreset(name: "Rainfall", mode: .matrix, zoom: 0.995, dy: 0.6, decay: 0.90, paletteShift: 0.45),
+        VisualizerPreset(name: "Hyperspace", mode: .starfield, zoom: 1.05, rot: 0.004, decay: 0.94, paletteShift: 0.15),
+        VisualizerPreset(name: "Liquid Bars", mode: .mirror, zoom: 1.016, warp: 1.6, decay: 0.92, paletteShift: 0.7),
+        VisualizerPreset(name: "Aurora Drift", mode: .aurora, decay: 0.88, paletteShift: 0.2, overlayAlpha: 0.45),
+        VisualizerPreset(name: "Nebula Bloom", mode: .nebula, zoom: 1.02, rot: 0.005, decay: 0.90, overlayAlpha: 0.35),
+        VisualizerPreset(name: "Kaleido Spin", mode: .kaleidoscope, zoom: 1.01, rot: -0.018, decay: 0.85, overlayAlpha: 0.5),
+        VisualizerPreset(name: "Plasma Wash", mode: .plasma, zoom: 1.008, warp: 1.1, decay: 0.86, paletteShift: 0.55, overlayAlpha: 0.4),
+        VisualizerPreset(name: "Warp Core", mode: .warp, zoom: 1.015, rot: 0.007, decay: 0.87, overlayAlpha: 0.5),
+        VisualizerPreset(name: "Metaflow", mode: .metaballs, zoom: 1.012, rot: -0.004, warp: 0.8, decay: 0.88, overlayAlpha: 0.45),
+        VisualizerPreset(name: "Ribbon Trails", mode: .ribbon, zoom: 1.01, rot: 0.009, warp: 1.2, decay: 0.95, paletteShift: 0.35),
+        VisualizerPreset(name: "Slow Burn", mode: .scope, zoom: 1.002, rot: -0.003, warp: 1.8, decay: 0.97, paletteShift: 0.8)
+    ]
 }
 
 struct VisualizerModeGroup: Identifiable {
@@ -101,13 +147,20 @@ private struct VisualizerVertex {
     var size: Float
 }
 
-/// Matches `Uniforms` in the shader: five floats then an int, 24-byte stride.
+/// Matches `Uniforms` in the shader: twelve floats then an int, 52-byte stride.
 private struct VisualizerUniforms {
     var time: Float
     var bass: Float
     var level: Float
     var aspect: Float
-    var fade: Float
+    var decay: Float
+    var zoom: Float
+    var rot: Float
+    var warp: Float
+    var dx: Float
+    var dy: Float
+    var paletteShift: Float
+    var overlayAlpha: Float
     var mode: Int32
 }
 
@@ -123,7 +176,14 @@ struct Uniforms {
     float bass;
     float level;
     float aspect;
-    float fade;
+    float decay;
+    float zoom;
+    float rot;
+    float warp;
+    float dx;
+    float dy;
+    float paletteShift;
+    float overlayAlpha;
     int mode;
 };
 
@@ -162,9 +222,39 @@ vertex FS v_full(uint vid [[vertex_id]]) {
     return o;
 }
 
-/// Painting black at low alpha is what leaves trails behind moving geometry.
-fragment float4 f_fade(FS in [[stage_in]], constant Uniforms& u [[buffer(0)]]) {
-    return float4(0.0, 0.0, 0.0, u.fade);
+/// The heart of the classic look: the previous frame is re-sampled through a
+/// zoom / rotate / drift / ripple transform and dimmed, rather than simply
+/// faded. Feeding a moving copy of the last frame back in is what turns plain
+/// geometry into tunnels, spirals and smears.
+fragment float4 f_feedback(FS in [[stage_in]],
+                           constant Uniforms& u [[buffer(0)]],
+                           texture2d<float> prev [[texture(0)]]) {
+    constexpr sampler smp(address::clamp_to_edge, filter::linear);
+
+    float2 p = in.uv - 0.5;
+    p.x *= u.aspect;
+
+    float c = cos(u.rot);
+    float sn = sin(u.rot);
+    p = float2(p.x * c - p.y * sn, p.x * sn + p.y * c);
+
+    p /= max(0.01, u.zoom);
+
+    // Ripple, scaled by bass so the warp breathes with the track.
+    float w = u.warp * (0.6 + u.bass * 1.6);
+    p += w * 0.02 * float2(sin(p.y * 7.0 + u.time * 1.3),
+                           cos(p.x * 7.0 - u.time * 1.1));
+
+    p += float2(u.dx, u.dy) * 0.01;
+
+    p.x /= u.aspect;
+    float2 uv = p + 0.5;
+
+    float3 col = prev.sample(smp, uv).rgb * u.decay;
+
+    // Bleed the hue along slightly so long trails drift in colour.
+    col = mix(col, col.gbr, 0.012 * u.paletteShift);
+    return float4(col, 1.0);
 }
 
 fragment float4 f_composite(FS in [[stage_in]], texture2d<float> tex [[texture(0)]]) {
@@ -231,7 +321,7 @@ fragment float4 f_procedural(FS in [[stage_in]],
                 + sin(length(q) * 2.0 - t * 1.7 * (1.0 + u.bass));
         v *= 0.25;
         float band = bandAt(spectrum, uv.x);
-        col = palette(v * 0.5 + t * 0.02, 0.0) * (0.35 + u.level * 1.1 + band * 0.9);
+        col = palette(v * 0.5 + t * 0.02, u.paletteShift) * (0.35 + u.level * 1.1 + band * 0.9);
     } else if (u.mode == 1) {
         // Kaleidoscope: fold the plane into wedges, then ring it by spectrum.
         float r = length(p);
@@ -242,7 +332,7 @@ fragment float4 f_procedural(FS in [[stage_in]],
         float band = bandAt(spectrum, r * 1.7);
         float pattern = 0.5 + 0.5 * sin(q.x * 26.0 - t * 2.0 + band * 10.0);
         float rings = 0.5 + 0.5 * sin(r * 34.0 - t * 3.0);
-        col = palette(r * 1.4 + t * 0.05, 0.2) * (0.2 + band * 2.4) * (0.45 + 0.55 * pattern * rings);
+        col = palette(r * 1.4 + t * 0.05, 0.2 + u.paletteShift) * (0.2 + band * 2.4) * (0.45 + 0.55 * pattern * rings);
         col *= smoothstep(1.05, 0.1, r);
     } else if (u.mode == 2) {
         // Aurora: drifting curtains whose height follows the spectrum.
@@ -252,7 +342,7 @@ fragment float4 f_procedural(FS in [[stage_in]],
         float crest = 0.18 + n * 0.42 + band * 0.55;
         float glow = exp(-abs(y - crest) * 7.5);
         float veil = exp(-abs(y - crest * 0.6) * 3.0) * 0.35;
-        col = palette(uv.x * 0.6 + t * 0.03, 0.35) * (glow + veil) * (0.8 + u.level * 2.0);
+        col = palette(uv.x * 0.6 + t * 0.03, 0.35 + u.paletteShift) * (glow + veil) * (0.8 + u.level * 2.0);
         col += float3(0.02, 0.05, 0.12) * (1.0 - y);
     } else if (u.mode == 3) {
         // Nebula: domain-warped noise, breathing on bass.
@@ -261,7 +351,7 @@ fragment float4 f_procedural(FS in [[stage_in]],
         float warp = fbm(q * 0.8 - tt);
         float n = fbm(q * 1.5 + float2(tt, -tt) + warp * 1.2);
         float d = length(q);
-        col = palette(n + u.bass * 0.3, 0.5) * pow(n, 2.0) * 2.6;
+        col = palette(n + u.bass * 0.3, 0.5 + u.paletteShift) * pow(n, 2.0) * 2.6;
         col *= smoothstep(1.7, 0.1, d);
         col += palette(n, 0.5) * u.bass * 0.6 * exp(-d * 2.0);
     } else if (u.mode == 4) {
@@ -279,7 +369,7 @@ fragment float4 f_procedural(FS in [[stage_in]],
         }
         float m = smoothstep(0.75, 1.7, field);
         float edge = smoothstep(1.7, 0.95, field);
-        col = palette(field * 0.22 + t * 0.03, 0.15) * m * (0.7 + u.level);
+        col = palette(field * 0.22 + t * 0.03, 0.15 + u.paletteShift) * m * (0.7 + u.level);
         col += palette(field * 0.22, 0.15) * edge * 0.5;
     } else {
         // Warp: a tunnel, with the throttle on bass.
@@ -288,11 +378,11 @@ fragment float4 f_procedural(FS in [[stage_in]],
         float z = 0.35 / r + t * 0.6 * (1.0 + u.bass * 0.8);
         float band = bandAt(spectrum, fract(z * 0.15));
         float stripes = 0.5 + 0.5 * sin(z * 6.0 + sin(a * 5.0 + t) * 1.2);
-        col = palette(fract(z * 0.08), 0.6) * stripes * (0.25 + band * 2.2);
+        col = palette(fract(z * 0.08), 0.6 + u.paletteShift) * stripes * (0.25 + band * 2.2);
         col *= smoothstep(0.0, 0.22, r) * smoothstep(1.25, 0.28, r);
     }
 
-    return float4(col, 1.0);
+    return float4(col, u.overlayAlpha);
 }
 """
 
@@ -315,11 +405,13 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
     var mode: VisualizerMode = .bars
     /// Set by the view; called on the main thread each frame.
     var frameProvider: (() -> VisualizerFrame)?
+    /// Reports the Auto rotation's current preset so the chrome can name it.
+    var onPresetChange: ((String) -> Void)?
 
     private let commandQueue: MTLCommandQueue
     private let solidPipeline: MTLRenderPipelineState
     private let pointPipeline: MTLRenderPipelineState
-    private let fadePipeline: MTLRenderPipelineState
+    private let feedbackPipeline: MTLRenderPipelineState
     private let compositePipeline: MTLRenderPipelineState
     private let proceduralPipeline: MTLRenderPipelineState
 
@@ -343,8 +435,14 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
     /// Geometry accumulates here instead of straight into the drawable: the
     /// swap chain rotates through several drawables, so "last frame" only
     /// exists if we keep it ourselves. This is what makes trails possible.
-    private var accumTexture: MTLTexture?
+    private var accumTextures: [MTLTexture] = []
+    private var accumIndex = 0
     private var accumNeedsClear = true
+
+    /// Auto-cycle state.
+    private var presetIndex = 0
+    private var presetElapsed: Float = 0
+    private var beatHold: Float = 0
 
     init?(device: MTLDevice, pixelFormat: MTLPixelFormat) {
         guard let queue = device.makeCommandQueue(),
@@ -353,7 +451,7 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
               let vfull = library.makeFunction(name: "v_full"),
               let solidFn = library.makeFunction(name: "f_solid"),
               let pointFn = library.makeFunction(name: "f_point"),
-              let fadeFn = library.makeFunction(name: "f_fade"),
+              let feedbackFn = library.makeFunction(name: "f_feedback"),
               let compFn = library.makeFunction(name: "f_composite"),
               let procFn = library.makeFunction(name: "f_procedural"),
               let uniforms = device.makeBuffer(length: MemoryLayout<VisualizerUniforms>.stride,
@@ -392,13 +490,13 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
 
         guard let solid = pipeline(vfn, solidFn, blend: .alpha),
               let point = pipeline(vfn, pointFn, blend: .additive),
-              let fade = pipeline(vfull, fadeFn, blend: .alpha),
+              let feedback = pipeline(vfull, feedbackFn, blend: .none),
               let comp = pipeline(vfull, compFn, blend: .none),
-              let proc = pipeline(vfull, procFn, blend: .none) else { return nil }
+              let proc = pipeline(vfull, procFn, blend: .alpha) else { return nil }
 
         solidPipeline = solid
         pointPipeline = point
-        fadePipeline = fade
+        feedbackPipeline = feedback
         compositePipeline = comp
         proceduralPipeline = proc
         super.init()
@@ -407,28 +505,73 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
     private enum BlendMode { case none, alpha, additive }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
-        accumTexture = nil
+        accumTextures = []
     }
 
-    private func ensureAccum(size: CGSize) -> MTLTexture? {
+    /// The preset actually being rendered: the Auto rotation when Auto is
+    /// selected, otherwise the standard feedback for the chosen mode.
+    private var activePreset: VisualizerPreset {
+        mode == .auto
+            ? VisualizerPreset.rotation[presetIndex % VisualizerPreset.rotation.count]
+            : VisualizerPreset.standard(for: mode)
+    }
+
+    var activePresetName: String { activePreset.name }
+
+    /// Hold each preset for a good while, then hard-cut on the next beat so the
+    /// change lands with the music rather than at an arbitrary moment. Long
+    /// dwells matter: the feedback buffer needs time to build up depth, and a
+    /// preset cut short never gets to show what it does.
+    private func advanceAutoCycle(rising: Float) {
+        guard mode == .auto else {
+            presetElapsed = 0
+            return
+        }
+        presetElapsed += 1.0 / 60.0
+        beatHold = max(0, beatHold - 1.0 / 60.0)
+
+        // Roughly a minute per preset. Because the cut waits for a beat, the
+        // real dwell is usually close to the minimum rather than the maximum.
+        let minimumHold: Float = 55
+        let forcedHold: Float = 100
+        let beat = rising > 0.06 && beatHold <= 0
+
+        if presetElapsed > forcedHold || (presetElapsed > minimumHold && beat) {
+            presetIndex = (presetIndex + 1) % VisualizerPreset.rotation.count
+            onPresetChange?(activePreset.name)
+            presetElapsed = 0
+            beatHold = 0.4
+            accumNeedsClear = true
+            particles.removeAll(keepingCapacity: true)
+            stars.removeAll(keepingCapacity: true)
+            drops.removeAll(keepingCapacity: true)
+        }
+    }
+
+    /// Two textures: the warp pass reads one and writes the other, so a frame
+    /// can never sample the target it is drawing into.
+    private func ensureAccum(size: CGSize) -> Bool {
         let width = max(1, Int(size.width))
         let height = max(1, Int(size.height))
-        if let texture = accumTexture, texture.width == width, texture.height == height {
-            return texture
+        if accumTextures.count == 2,
+           accumTextures[0].width == width, accumTextures[0].height == height {
+            return true
         }
         let desc = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: pixelFormat, width: width, height: height, mipmapped: false
         )
         desc.usage = [.renderTarget, .shaderRead]
         desc.storageMode = .private
-        accumTexture = device.makeTexture(descriptor: desc)
+        guard let a = device.makeTexture(descriptor: desc),
+              let b = device.makeTexture(descriptor: desc) else { return false }
+        accumTextures = [a, b]
         accumNeedsClear = true
-        return accumTexture
+        return true
     }
 
     func draw(in view: MTKView) {
         guard let drawable = view.currentDrawable,
-              let accum = ensureAccum(size: view.drawableSize),
+              ensureAccum(size: view.drawableSize),
               let commandBuffer = commandQueue.makeCommandBuffer() else { return }
 
         let frame = frameProvider?() ?? VisualizerFrame(
@@ -439,37 +582,46 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
 
         let aspect = Float(view.drawableSize.width / max(1, view.drawableSize.height))
         advance(frame: frame)
-        uploadUniforms(aspect: aspect, frame: frame)
 
-        // Pass 1 — everything lands in the accumulation texture.
+        let preset = activePreset
+        let effectiveMode = preset.mode
+        uploadUniforms(aspect: aspect, frame: frame, preset: preset)
+
+        let source = accumTextures[accumIndex]
+        let target = accumTextures[1 - accumIndex]
+
         let scenePass = MTLRenderPassDescriptor()
-        scenePass.colorAttachments[0].texture = accum
-        scenePass.colorAttachments[0].loadAction = accumNeedsClear ? .clear : .load
-        scenePass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        scenePass.colorAttachments[0].texture = target
+        scenePass.colorAttachments[0].loadAction = .dontCare
         scenePass.colorAttachments[0].storeAction = .store
-        accumNeedsClear = false
 
         if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: scenePass) {
-            if mode.isProcedural {
+            // 1 — warp and dim the previous frame into the target.
+            encoder.setRenderPipelineState(feedbackPipeline)
+            encoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 0)
+            encoder.setFragmentTexture(accumNeedsClear ? nil : source, index: 0)
+            if !accumNeedsClear {
+                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+            }
+            accumNeedsClear = false
+
+            // 2 — draw this frame's content over it.
+            if effectiveMode.isProcedural {
                 encoder.setRenderPipelineState(proceduralPipeline)
                 encoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 0)
                 encoder.setFragmentBuffer(spectrumBuffer, offset: 0, index: 1)
                 encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
             } else {
-                encoder.setRenderPipelineState(fadePipeline)
-                encoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 0)
-                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-
-                buildVertices(frame: frame, aspect: aspect)
+                buildVertices(mode: effectiveMode, frame: frame, aspect: aspect)
                 if !vertices.isEmpty, let buffer = ensureBuffer(count: vertices.count) {
                     buffer.contents().copyMemory(
                         from: vertices,
                         byteCount: vertices.count * MemoryLayout<VisualizerVertex>.stride
                     )
-                    encoder.setRenderPipelineState(mode.isParticle ? pointPipeline : solidPipeline)
+                    encoder.setRenderPipelineState(effectiveMode.isParticle ? pointPipeline : solidPipeline)
                     encoder.setVertexBuffer(buffer, offset: 0, index: 0)
                     encoder.drawPrimitives(
-                        type: mode.isParticle ? .point : .triangle,
+                        type: effectiveMode.isParticle ? .point : .triangle,
                         vertexStart: 0,
                         vertexCount: vertices.count
                     )
@@ -478,29 +630,37 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
             encoder.endEncoding()
         }
 
-        // Pass 2 — tone-map the accumulation onto the drawable.
+        // 3 — tone-map onto the drawable.
         if let present = view.currentRenderPassDescriptor {
             present.colorAttachments[0].loadAction = .dontCare
             if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: present) {
                 encoder.setRenderPipelineState(compositePipeline)
-                encoder.setFragmentTexture(accum, index: 0)
+                encoder.setFragmentTexture(target, index: 0)
                 encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
                 encoder.endEncoding()
             }
         }
 
+        accumIndex = 1 - accumIndex
         commandBuffer.present(drawable)
         commandBuffer.commit()
     }
 
-    private func uploadUniforms(aspect: Float, frame: VisualizerFrame) {
+    private func uploadUniforms(aspect: Float, frame: VisualizerFrame, preset: VisualizerPreset) {
         var uniforms = VisualizerUniforms(
             time: phase * 4,
             bass: bassEnvelope,
             level: frame.level,
             aspect: aspect,
-            fade: mode.trailFade,
-            mode: mode.proceduralIndex ?? 0
+            decay: preset.decay,
+            zoom: preset.zoom,
+            rot: preset.rot,
+            warp: preset.warp,
+            dx: preset.dx,
+            dy: preset.dy,
+            paletteShift: preset.paletteShift,
+            overlayAlpha: preset.overlayAlpha,
+            mode: preset.mode.proceduralIndex ?? 0
         )
         uniformBuffer.contents().copyMemory(
             from: &uniforms, byteCount: MemoryLayout<VisualizerUniforms>.stride
@@ -529,12 +689,15 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
         let rising = max(0, frame.bass - lastBass)
         lastBass = frame.bass
 
-        // Only the active particle system keeps state.
-        if mode != .bloom { particles.removeAll(keepingCapacity: true) }
-        if mode != .starfield { stars.removeAll(keepingCapacity: true) }
-        if mode != .matrix { drops.removeAll(keepingCapacity: true) }
+        advanceAutoCycle(rising: rising)
+        let active = activePreset.mode
 
-        switch mode {
+        // Only the active particle system keeps state.
+        if active != .bloom { particles.removeAll(keepingCapacity: true) }
+        if active != .starfield { stars.removeAll(keepingCapacity: true) }
+        if active != .matrix { drops.removeAll(keepingCapacity: true) }
+
+        switch active {
         case .bloom: advanceBloom(rising: rising)
         case .starfield: advanceStars(level: frame.level)
         case .matrix: advanceDrops()
@@ -613,7 +776,7 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
 
     // MARK: Geometry
 
-    private func buildVertices(frame: VisualizerFrame, aspect: Float) {
+    private func buildVertices(mode: VisualizerMode, frame: VisualizerFrame, aspect: Float) {
         vertices.removeAll(keepingCapacity: true)
         guard !mode.isProcedural else { return }
         switch mode {
@@ -846,6 +1009,7 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
 private struct MetalVisualizerView: NSViewRepresentable {
     let mode: VisualizerMode
     let frameProvider: () -> VisualizerFrame
+    let onPresetChange: (String) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -866,6 +1030,7 @@ private struct MetalVisualizerView: NSViewRepresentable {
            let renderer = VisualizerRenderer(device: device, pixelFormat: view.colorPixelFormat) {
             renderer.mode = mode
             renderer.frameProvider = frameProvider
+            renderer.onPresetChange = onPresetChange
             context.coordinator.renderer = renderer
             view.delegate = renderer
         }
@@ -875,6 +1040,7 @@ private struct MetalVisualizerView: NSViewRepresentable {
     func updateNSView(_ nsView: MTKView, context: Context) {
         context.coordinator.renderer?.mode = mode
         context.coordinator.renderer?.frameProvider = frameProvider
+        context.coordinator.renderer?.onPresetChange = onPresetChange
     }
 }
 
@@ -884,6 +1050,7 @@ struct VisualizerWindow: View {
     @EnvironmentObject private var engine: AudioEngine
     @AppStorage(VisualizerMode.storageKey) private var storedMode = VisualizerMode.bars.rawValue
     @State private var showChrome = true
+    @State private var presetName = ""
     @State private var hideTask: Task<Void, Never>?
 
     private var mode: VisualizerMode {
@@ -898,13 +1065,19 @@ struct VisualizerWindow: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color.black)
             } else {
-                MetalVisualizerView(mode: mode) { engine.visualizerFrame() }
-                    .ignoresSafeArea()
+                MetalVisualizerView(
+                    mode: mode,
+                    frameProvider: { engine.visualizerFrame() },
+                    onPresetChange: { presetName = $0 }
+                )
+                .ignoresSafeArea()
             }
 
             if showChrome {
                 HStack(spacing: 12) {
                     Picker("", selection: $storedMode) {
+                        Text(VisualizerMode.auto.rawValue).tag(VisualizerMode.auto.rawValue)
+                        Divider()
                         ForEach(VisualizerMode.groups) { group in
                             Section(group.id) {
                                 ForEach(group.modes) { m in
@@ -916,6 +1089,12 @@ struct VisualizerWindow: View {
                     .labelsHidden()
                     .pickerStyle(.menu)
                     .frame(width: 160)
+
+                    if mode == .auto && !presetName.isEmpty {
+                        Text(presetName)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
 
                     if !engine.isRunning {
                         Text("Engine stopped")

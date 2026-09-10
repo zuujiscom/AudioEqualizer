@@ -170,7 +170,17 @@ struct AudioEqualizerApp: App {
 
                 // Selecting a mode also opens the window, so the menu works as
                 // a launcher rather than only as a switch for a window already
-                // on screen.
+                // on screen. Auto is a single top-level choice, not a section:
+                // a one-item section headed "Auto" containing "Auto" is only
+                // confusing, and the header is not clickable.
+                Button("Auto (cycle presets)") {
+                    UserDefaults.standard.set(VisualizerMode.auto.rawValue, forKey: VisualizerMode.storageKey)
+                    openVisualizerWindow()
+                }
+                .keyboardShortcut("a", modifiers: [.command, .option])
+
+                Divider()
+
                 ForEach(VisualizerMode.groups) { group in
                     Section(group.id) {
                         ForEach(group.modes) { mode in
