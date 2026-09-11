@@ -5,6 +5,8 @@ DerivedData/
 *.dia
 
 # Xcode user state
+# xcodebuild writes this one out empty; nothing depends on it.
+*.xcodeproj/project.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
 xcuserdata/
 *.xcuserstate
 *.xcscmblueprint
