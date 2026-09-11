@@ -7,6 +7,8 @@ import simd
 enum VisualizerMode: String, CaseIterable, Identifiable {
     /// Cycles `VisualizerPreset.rotation` on a timer, switching on a beat.
     case auto = "Auto"
+    /// An imported MilkDrop preset drives the warp; see `MilkdropLibrary`.
+    case milkdrop = "MilkDrop"
     // Geometric
     case bars = "Bars"
     case mirror = "Mirror"
@@ -110,7 +112,7 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
     }
 
     var family: String {
-        if self == .auto { return "Auto" }
+        if self == .auto || self == .milkdrop { return "Auto" }
         if isProcedural { return "Shader" }
         if replicatorSpec != nil { return "Replicator" }
         if forceSpec != nil { return "Simulation" }
@@ -208,6 +210,10 @@ struct VisualizerPreset {
             return VisualizerPreset(name: mode.rawValue, mode: mode, zoom: 1.01, decay: 0.92)
         case .matrix:
             return VisualizerPreset(name: mode.rawValue, mode: mode, decay: 0.84)
+        case .milkdrop:
+            // Decay and the whole transform come from the preset's own
+            // equations; only the waveform drawn on top is ours.
+            return VisualizerPreset(name: mode.rawValue, mode: .scope, decay: 0.96)
         case .burst, .helix, .waveform, .grid, .scatter:
             return VisualizerPreset(name: mode.rawValue, mode: mode, zoom: 1.008, rot: 0.003,
                                     warp: 0.4, decay: 0.90)
@@ -262,6 +268,12 @@ private struct VisualizerVertex {
     var pos: SIMD2<Float>
     var color: SIMD4<Float>
     var size: Float
+}
+
+/// Matches `WarpIn`: two float2s, 16-byte stride.
+private struct WarpVertex {
+    var pos: SIMD2<Float>
+    var uv: SIMD2<Float>
 }
 
 /// Matches `Uniforms` in the shader: twelve floats then an int, 52-byte stride.
@@ -372,6 +384,27 @@ fragment float4 f_feedback(FS in [[stage_in]],
     // Bleed the hue along slightly so long trails drift in colour.
     col = mix(col, col.gbr, 0.012 * u.paletteShift);
     return float4(col, 1.0);
+}
+
+struct WarpIn { float2 pos; float2 uv; };
+struct WarpOut { float4 position [[position]]; float2 uv; };
+
+/// MilkDrop warps a mesh rather than applying one transform to the whole
+/// frame: every vertex carries its own sample point, computed from that
+/// preset's per-pixel equations. Sampling the previous frame through the mesh
+/// is what makes an imported preset move the way it does in MilkDrop.
+vertex WarpOut v_warpmesh(const device WarpIn* verts [[buffer(0)]], uint vid [[vertex_id]]) {
+    WarpOut o;
+    o.position = float4(verts[vid].pos, 0.0, 1.0);
+    o.uv = verts[vid].uv;
+    return o;
+}
+
+fragment float4 f_warpmesh(WarpOut in [[stage_in]],
+                           constant Uniforms& u [[buffer(0)]],
+                           texture2d<float> prev [[texture(0)]]) {
+    constexpr sampler smp(address::clamp_to_edge, filter::linear);
+    return float4(prev.sample(smp, in.uv).rgb * u.decay, 1.0);
 }
 
 fragment float4 f_composite(FS in [[stage_in]], texture2d<float> tex [[texture(0)]]) {
@@ -531,6 +564,7 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
     private let feedbackPipeline: MTLRenderPipelineState
     private let compositePipeline: MTLRenderPipelineState
     private let proceduralPipeline: MTLRenderPipelineState
+    private let warpMeshPipeline: MTLRenderPipelineState
 
     private var vertices: [VisualizerVertex] = []
     private var vertexBuffer: MTLBuffer?
@@ -540,6 +574,14 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
     private var stars: [Particle] = []
     private var drops: [Particle] = []
     private var simParticles: [Particle] = []
+
+    /// The imported MilkDrop preset driving the warp, if any.
+    var milkdrop: MilkdropPreset?
+    private var warpVertices: [WarpVertex] = []
+    private var warpBuffer: MTLBuffer?
+    private var warpCapacity = 0
+    private var bandAverages = SIMD3<Double>(0.02, 0.02, 0.02)
+    private var elapsed: Double = 0
     private var smoothedSpectrum = [Float](repeating: 0, count: 64)
     private var bassEnvelope: Float = 0
     /// Smoothed overall energy; scales the master clock.
@@ -574,6 +616,8 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
               let feedbackFn = library.makeFunction(name: "f_feedback"),
               let compFn = library.makeFunction(name: "f_composite"),
               let procFn = library.makeFunction(name: "f_procedural"),
+              let warpVFn = library.makeFunction(name: "v_warpmesh"),
+              let warpFFn = library.makeFunction(name: "f_warpmesh"),
               let uniforms = device.makeBuffer(length: MemoryLayout<VisualizerUniforms>.stride,
                                                options: .storageModeShared),
               let spectrum = device.makeBuffer(length: 64 * MemoryLayout<Float>.stride,
@@ -612,13 +656,15 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
               let point = pipeline(vfn, pointFn, blend: .additive),
               let feedback = pipeline(vfull, feedbackFn, blend: .none),
               let comp = pipeline(vfull, compFn, blend: .none),
-              let proc = pipeline(vfull, procFn, blend: .alpha) else { return nil }
+              let proc = pipeline(vfull, procFn, blend: .alpha),
+              let warpMesh = pipeline(warpVFn, warpFFn, blend: .none) else { return nil }
 
         solidPipeline = solid
         pointPipeline = point
         feedbackPipeline = feedback
         compositePipeline = comp
         proceduralPipeline = proc
+        warpMeshPipeline = warpMesh
         super.init()
     }
 
@@ -717,11 +763,22 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
 
         if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: scenePass) {
             // 1 — warp and dim the previous frame into the target.
-            encoder.setRenderPipelineState(feedbackPipeline)
-            encoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 0)
-            encoder.setFragmentTexture(accumNeedsClear ? nil : source, index: 0)
-            if !accumNeedsClear {
-                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+            if let preset = milkdrop {
+                buildWarpMesh(preset: preset, frame: frame)
+                if !accumNeedsClear, let mesh = warpBuffer, !warpVertices.isEmpty {
+                    encoder.setRenderPipelineState(warpMeshPipeline)
+                    encoder.setVertexBuffer(mesh, offset: 0, index: 0)
+                    encoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 0)
+                    encoder.setFragmentTexture(source, index: 0)
+                    encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: warpVertices.count)
+                }
+            } else {
+                encoder.setRenderPipelineState(feedbackPipeline)
+                encoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 0)
+                encoder.setFragmentTexture(accumNeedsClear ? nil : source, index: 0)
+                if !accumNeedsClear {
+                    encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                }
             }
             accumNeedsClear = false
 
@@ -1292,6 +1349,93 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
         simParticles.removeAll { $0.life <= 0 || abs($0.pos.x) > 1.7 || abs($0.pos.y) > 1.7 }
     }
 
+    // MARK: MilkDrop warp mesh
+
+    private static let meshCols = 33
+    private static let meshRows = 25
+
+    /// MilkDrop's bass/mid/treb are normalised so that "typical" is 1.0, and
+    /// presets depend on that — `sin(bass_att)` only behaves if bass_att
+    /// hovers around one. A slow running average per band provides it.
+    private func milkdropAudio(frame: VisualizerFrame) -> MilkdropAudio {
+        func mean(_ range: Range<Int>) -> Double {
+            let slice = smoothedSpectrum[range.clamped(to: smoothedSpectrum.indices)]
+            guard !slice.isEmpty else { return 0 }
+            return Double(slice.reduce(0, +)) / Double(slice.count)
+        }
+        let raw = SIMD3<Double>(mean(0..<16), mean(16..<41), mean(41..<64))
+        bandAverages += (raw - bandAverages) * 0.002
+        let floorLevel = SIMD3<Double>(repeating: 0.015)
+        let safe = SIMD3<Double>(
+            Swift.max(bandAverages.x, floorLevel.x),
+            Swift.max(bandAverages.y, floorLevel.y),
+            Swift.max(bandAverages.z, floorLevel.z)
+        )
+        let n = SIMD3<Double>(raw.x / safe.x, raw.y / safe.y, raw.z / safe.z)
+
+        var audio = MilkdropAudio()
+        audio.bass = Swift.min(4, n.x); audio.mid = Swift.min(4, n.y); audio.treb = Swift.min(4, n.z)
+        audio.bassAtt = Swift.min(4, (n.x + 1) * 0.5)
+        audio.midAtt = Swift.min(4, (n.y + 1) * 0.5)
+        audio.trebAtt = Swift.min(4, (n.z + 1) * 0.5)
+        audio.vol = (audio.bass + audio.mid + audio.treb) / 3
+        audio.volAtt = (audio.bassAtt + audio.midAtt + audio.trebAtt) / 3
+        return audio
+    }
+
+    /// Builds the warped mesh for this frame. The vertex stays put; its texture
+    /// coordinate moves, which is how MilkDrop drags the previous frame around.
+    private func buildWarpMesh(preset: MilkdropPreset, frame: VisualizerFrame) {
+        elapsed += 1.0 / 60.0
+        _ = preset.step(time: elapsed, fps: 60, audio: milkdropAudio(frame: frame))
+
+        let cols = Self.meshCols
+        let rows = Self.meshRows
+        var points = [SIMD2<Float>](repeating: .zero, count: cols * rows)
+
+        for r in 0..<rows {
+            for c in 0..<cols {
+                let x = Double(c) / Double(cols - 1)
+                let y = Double(r) / Double(rows - 1)
+                let m = preset.stepPixel(x: x, y: y)
+
+                // MilkDrop's warp, in 0...1 texture space.
+                var u = x - m.cx
+                var v = y - m.cy
+                let cosR = cos(m.rot), sinR = sin(m.rot)
+                let ur = u * cosR - v * sinR
+                let vr = u * sinR + v * cosR
+                let zoom = Swift.max(0.001, m.zoom)
+                u = ur / zoom / Swift.max(0.001, m.sx)
+                v = vr / zoom / Swift.max(0.001, m.sy)
+                u += m.cx - m.dx
+                v += m.cy - m.dy
+                points[r * cols + c] = SIMD2(Float(u), Float(v))
+            }
+        }
+
+        warpVertices.removeAll(keepingCapacity: true)
+        func vertex(_ c: Int, _ r: Int) -> WarpVertex {
+            let x = Float(c) / Float(cols - 1)
+            let y = Float(r) / Float(rows - 1)
+            return WarpVertex(pos: SIMD2(x * 2 - 1, 1 - y * 2), uv: points[r * cols + c])
+        }
+        for r in 0..<(rows - 1) {
+            for c in 0..<(cols - 1) {
+                let a = vertex(c, r), b = vertex(c + 1, r)
+                let d = vertex(c, r + 1), e = vertex(c + 1, r + 1)
+                warpVertices.append(contentsOf: [a, b, d, b, e, d])
+            }
+        }
+
+        let needed = warpVertices.count * MemoryLayout<WarpVertex>.stride
+        if warpBuffer == nil || warpCapacity < needed {
+            warpBuffer = device.makeBuffer(length: needed, options: .storageModeShared)
+            warpCapacity = needed
+        }
+        warpBuffer?.contents().copyMemory(from: warpVertices, byteCount: needed)
+    }
+
     private func ensureBuffer(count: Int) -> MTLBuffer? {
         if let buffer = vertexBuffer, count <= vertexCapacity { return buffer }
         let capacity = max(count, vertexCapacity * 2, 4096)
@@ -1309,6 +1453,7 @@ final class VisualizerRenderer: NSObject, MTKViewDelegate {
 
 private struct MetalVisualizerView: NSViewRepresentable {
     let mode: VisualizerMode
+    let milkdrop: MilkdropPreset?
     let frameProvider: () -> VisualizerFrame
     let onPresetChange: (String) -> Void
 
@@ -1330,6 +1475,7 @@ private struct MetalVisualizerView: NSViewRepresentable {
         if let device = view.device,
            let renderer = VisualizerRenderer(device: device, pixelFormat: view.colorPixelFormat) {
             renderer.mode = mode
+            renderer.milkdrop = milkdrop
             renderer.frameProvider = frameProvider
             renderer.onPresetChange = onPresetChange
             context.coordinator.renderer = renderer
@@ -1340,6 +1486,7 @@ private struct MetalVisualizerView: NSViewRepresentable {
 
     func updateNSView(_ nsView: MTKView, context: Context) {
         context.coordinator.renderer?.mode = mode
+        context.coordinator.renderer?.milkdrop = milkdrop
         context.coordinator.renderer?.frameProvider = frameProvider
         context.coordinator.renderer?.onPresetChange = onPresetChange
     }
@@ -1350,6 +1497,8 @@ private struct MetalVisualizerView: NSViewRepresentable {
 struct VisualizerWindow: View {
     @EnvironmentObject private var engine: AudioEngine
     @AppStorage(VisualizerMode.storageKey) private var storedMode = VisualizerMode.bars.rawValue
+    @AppStorage(MilkdropLibrary.selectionKey) private var storedMilkdrop = ""
+    @EnvironmentObject private var milkdropLibrary: MilkdropLibrary
     @State private var showChrome = true
     @State private var presetName = ""
     @State private var hideTask: Task<Void, Never>?
@@ -1368,6 +1517,7 @@ struct VisualizerWindow: View {
             } else {
                 MetalVisualizerView(
                     mode: mode,
+                    milkdrop: mode == .milkdrop ? milkdropLibrary.presets.first(where: { $0.name == storedMilkdrop }) : nil,
                     frameProvider: { engine.visualizerFrame() },
                     onPresetChange: { presetName = $0 }
                 )
@@ -1390,6 +1540,13 @@ struct VisualizerWindow: View {
                     .labelsHidden()
                     .pickerStyle(.menu)
                     .frame(width: 160)
+
+                    if mode == .milkdrop && !storedMilkdrop.isEmpty {
+                        Text(storedMilkdrop)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
 
                     if mode == .auto && !presetName.isEmpty {
                         Text(presetName)

@@ -43,6 +43,7 @@ struct AudioEqualizerApp: App {
     @StateObject private var audioEngine = AudioEngine()
     @StateObject private var presetManager = PresetManager()
     @StateObject private var deviceProfiles = DeviceProfileStore()
+    @StateObject private var milkdropLibrary = MilkdropLibrary()
 
     var body: some Scene {
         WindowGroup {
@@ -51,6 +52,7 @@ struct AudioEqualizerApp: App {
                 .environmentObject(audioEngine.meters)
                 .environmentObject(presetManager)
                 .environmentObject(deviceProfiles)
+                .environmentObject(milkdropLibrary)
                 .frame(minWidth: 900, minHeight: 640)
                 .task {
                     // The engine's device didSet runs during init, before this
@@ -83,6 +85,16 @@ struct AudioEqualizerApp: App {
                 }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(presetManager.selectedPreset == nil)
+
+                Divider()
+
+                Button("Import MilkDrop Presets…") {
+                    importMilkdropPresets()
+                }
+
+                Button("Reveal MilkDrop Folder") {
+                    NSWorkspace.shared.open(milkdropLibrary.folderURL)
+                }
 
                 Divider()
 
@@ -188,6 +200,19 @@ struct AudioEqualizerApp: App {
                 }
                 .keyboardShortcut("a", modifiers: [.command, .option])
 
+                if !milkdropLibrary.isEmpty {
+                    Divider()
+                    Menu("MilkDrop (\(milkdropLibrary.presets.count))") {
+                        ForEach(milkdropLibrary.presets.prefix(60), id: \.name) { preset in
+                            Button(preset.name) {
+                                UserDefaults.standard.set(preset.name, forKey: MilkdropLibrary.selectionKey)
+                                UserDefaults.standard.set(VisualizerMode.milkdrop.rawValue, forKey: VisualizerMode.storageKey)
+                                openVisualizerWindow()
+                            }
+                        }
+                    }
+                }
+
                 Divider()
 
                 ForEach(VisualizerMode.groups) { group in
@@ -209,6 +234,7 @@ struct AudioEqualizerApp: App {
         Window("Visualizer", id: Self.visualizerWindowID) {
             VisualizerWindow()
                 .environmentObject(audioEngine)
+                .environmentObject(milkdropLibrary)
         }
         .defaultSize(width: 960, height: 600)
     }
@@ -217,6 +243,21 @@ struct AudioEqualizerApp: App {
 
     private func openVisualizerWindow() {
         openWindow(id: Self.visualizerWindowID)
+    }
+
+    /// Accepts folders as well as files — preset packs arrive as directories of
+    /// hundreds of `.milk` files, and picking them one at a time is no use.
+    private func importMilkdropPresets() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.message = "Choose .milk presets, or a folder of them."
+        panel.begin { response in
+            guard response == .OK else { return }
+            let urls = panel.urls
+            Task { @MainActor in milkdropLibrary.importPresets(from: urls) }
+        }
     }
 }
 
