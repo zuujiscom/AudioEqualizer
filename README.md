@@ -147,6 +147,7 @@ Quit the app, copy the new `AudioEqualizer.app` over the old one in
 ## License
 
 Audio Equalizer is free software, released under the
-[GNU General Public License v3.0](LICENSE). You can use, study, change and
-share it. If you distribute a modified version, you must release its source
-under the same license.
+[GNU General Public License, version 3 or (at your option) any later version](LICENSE)
+(GPL-3.0-or-later). You can use, study, change and share it. If you
+distribute a modified version, you must release its source under the same
+license.

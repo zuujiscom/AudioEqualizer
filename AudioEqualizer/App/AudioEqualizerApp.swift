@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import SwiftUI
 
 /// AppKit re-adds View and Help after SwiftUI builds the menu bar, so

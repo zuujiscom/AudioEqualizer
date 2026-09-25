@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import SwiftUI
 
 /// Header-bar preset control. Replaces the old sidebar list — selecting a
