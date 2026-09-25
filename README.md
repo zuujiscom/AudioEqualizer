@@ -16,12 +16,37 @@ no virtual audio driver to install.
 
 ## How it works
 
-Audio Equalizer uses the Core Audio *process tap* API added in recent macOS
-versions. When you press Start, it taps the system's audio output, runs it
-through the EQ, and plays the result on your real output device, all in one
-clock-synced audio callback. Stop removes the tap and the Mac's audio goes back
-to normal. Nothing is installed into the system, and there is no kernel
-extension or audio driver.
+Audio Equalizer uses the Core Audio *process tap* API added in macOS 26. When
+you press Start, it:
+
+1. Creates a **process tap** that captures everything the Mac is playing,
+   except the app's own audio. While the tap is active, macOS mutes the
+   original sound, so you hear only the equalized version.
+2. Creates an **aggregate audio device** named "Audio Equalizer Output" that
+   combines the tap with your real speakers or headphones.
+3. Runs the captured audio through the EQ and plays the result on your output
+   device, all in one clock-synced audio callback.
+
+The tap and the aggregate device are both **private**: other apps, System
+Settings and Audio MIDI Setup do not see them. Pressing Stop removes both and
+your Mac's audio goes back to normal. If the app quits or crashes, macOS
+removes them automatically.
+
+### What it does not install
+
+There is no kernel extension, no audio driver or plug-in, no login item and no
+background service. The app only runs while you have it open.
+
+### What it stores on your Mac
+
+- **The app itself**, wherever you put it (usually `/Applications`).
+- **Your presets, device profiles and imported MilkDrop presets** in
+  `~/Library/Application Support/AudioEqualizer/`.
+- **Its settings** (master gain, visualizer choices, whether device profiles
+  are on) in its preferences file,
+  `~/Library/Preferences/com.zuujis.AudioEqualizer.plist`.
+- **The audio-capture permission** you grant it, which macOS keeps in its
+  privacy settings under Privacy & Security → Screen & System Audio Recording.
 
 ## Getting started
 
@@ -94,12 +119,17 @@ Quit the app, copy the new `AudioEqualizer.app` over the old one in
 
 ### Uninstall
 
-Quit the app and delete it from `/Applications`. To remove your presets and
-device profiles too:
+1. Press Stop (or just quit the app), then delete it from `/Applications`.
+2. To remove your presets, device profiles and settings too:
 
-```bash
-rm -rf ~/Library/Application\ Support/AudioEqualizer
-```
+   ```bash
+   rm -rf ~/Library/Application\ Support/AudioEqualizer
+   defaults delete com.zuujis.AudioEqualizer
+   ```
+
+3. To remove its audio-capture permission, open System Settings → Privacy &
+   Security → Screen & System Audio Recording, select Audio Equalizer and
+   remove it with the minus button.
 
 ### Troubleshooting
 
