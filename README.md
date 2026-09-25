@@ -4,6 +4,8 @@ A system-wide equalizer for macOS. It shapes and boosts whatever your Mac is
 playing (music, videos, games, calls) on whichever output you are using, with
 no virtual audio driver to install.
 
+![Audio Equalizer's main window with its spectrum analyzer and 10-band equalizer, next to the visualizer window.](docs/screenshot.webp)
+
 - **10, 15 or 31 band graphic EQ**, from 20 Hz to 20 kHz, ±24 dB per band.
 - **Master gain up to +24 dB**, for quiet laptops, speakers and headphones.
 - **17 built-in presets** (Bass Boost, Vocal, Podcast/Voice, Night Mode and
