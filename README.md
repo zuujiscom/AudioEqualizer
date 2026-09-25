@@ -29,7 +29,7 @@ extension or audio driver.
 
 - A Mac with **Apple silicon** (M1 or later).
 - **macOS 26 (Tahoe) or later.** The process-tap APIs it depends on are not
-  available on older versions.
+  available on older versions. Tested on macOS 26 and macOS 27.
 - **Xcode 26 or later**, free from the Mac App Store.
 
 ### Build and install

@@ -245,11 +245,15 @@ final class AudioEngine: NSObject, ObservableObject {
             mElement: kAudioObjectPropertyElementMain
         )
 
-        var name: CFString = "" as CFString
-        var dataSize = UInt32(MemoryLayout<CFString>.size)
+        // Core Audio hands back a +1 retained CFString. Receiving it into a
+        // plain CFString var would let Swift manage an object it never
+        // retained, so take ownership explicitly.
+        var name: Unmanaged<CFString>?
+        var dataSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
 
         let status = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &dataSize, &name)
-        return status == noErr ? (name as String) : nil
+        guard status == noErr, let name else { return nil }
+        return name.takeRetainedValue() as String
     }
 
     static func getDeviceUID(deviceID: AudioObjectID) -> String? {
@@ -259,11 +263,15 @@ final class AudioEngine: NSObject, ObservableObject {
             mElement: kAudioObjectPropertyElementMain
         )
 
-        var uid: CFString = "" as CFString
-        var dataSize = UInt32(MemoryLayout<CFString>.size)
+        // Core Audio hands back a +1 retained CFString. Receiving it into a
+        // plain CFString var would let Swift manage an object it never
+        // retained, so take ownership explicitly.
+        var uid: Unmanaged<CFString>?
+        var dataSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
 
         let status = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &dataSize, &uid)
-        return status == noErr ? (uid as String) : nil
+        guard status == noErr, let uid else { return nil }
+        return uid.takeRetainedValue() as String
     }
 
     static func getDefaultOutputDeviceID() -> AudioDeviceID? {
