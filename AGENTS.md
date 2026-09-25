@@ -87,4 +87,5 @@ The output-device listener updates `selectedOutputDeviceID`; while running, the 
 - Keep source under the existing app folders and do not commit Xcode user-state or DerivedData files.
 - The project is `objectVersion 56` with no file-system-synchronized groups, so a new source file must be hand-registered in `project.pbxproj` in four places: `PBXBuildFile`, `PBXFileReference`, the owning `PBXGroup`'s children, and the target's `PBXSourcesBuildPhase`. Verify with `plutil -lint` afterwards.
 - Preserve the existing SwiftUI style and inline comments; comments around Core Audio lifecycle code document real safety constraints.
-- There is currently no README. Keep this file focused on implementation context; add user-facing setup or product documentation separately when requested.
+- `README.md` holds the user-facing setup and usage guide; keep this file focused on implementation context. The project is GPL-3.0 (`LICENSE`).
+- Signing is "Sign to Run Locally" (`CODE_SIGN_IDENTITY = "-"`, no team) so anyone can build it. Do not commit a personal signing identity or team ID: the repository is public.
