@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import AppKit
 import SwiftUI
 
 struct BandControlsView: View {
@@ -191,7 +192,7 @@ struct BandSlider: View {
     /// Horizontal space this column may occupy — see `BandControlsView.bandRow`.
     let columnWidth: CGFloat
 
-    /// Track length of the (rotated) vertical slider.
+    /// Track length of the vertical slider.
     static let trackLength: CGFloat = 130
     /// Total height of a band column, so the row can be given a fixed height.
     static let rowHeight: CGFloat = trackLength + 56
@@ -218,19 +219,17 @@ struct BandSlider: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
-            // Slider. A SwiftUI Slider is always horizontal, so it is laid out
-            // at its full track length and then rotated upright; the outer frame
-            // has to be the rotated (transposed) size or every band reserves a
-            // track-length of horizontal space and only a handful stay on screen.
-            Slider(
+            // A native vertical slider rather than a rotated `Slider`: rotation
+            // is visual only, so the AppKit control underneath kept tracking
+            // the mouse horizontally in unrotated coordinates and the knob did
+            // not follow a vertical drag.
+            VerticalGainSlider(
                 value: $band.gain,
-                in: gainRange,
-                step: 0.5
+                range: gainRange,
+                step: 0.5,
+                tint: gainColor
             )
-            .frame(width: Self.trackLength, height: columnWidth)
-            .rotationEffect(.degrees(-90), anchor: .center)
             .frame(width: columnWidth, height: Self.trackLength)
-            .tint(gainColor)
 
             // Frequency label
             Text(band.frequencyLabel)
@@ -265,6 +264,167 @@ struct BandSlider: View {
         if band.gain > 3 { return .green }
         if band.gain < -3 { return .orange }
         return .primary
+    }
+}
+
+// MARK: - Vertical Gain Slider
+
+/// A vertical slider whose knob follows the pointer's vertical position and
+/// responds to the scroll wheel while the pointer is over it. The fill runs
+/// from the 0 dB line to the knob, so boosts and cuts read at a glance.
+struct VerticalGainSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let tint: Color
+
+    private static let knobSize: CGFloat = 14
+    private static let trackWidth: CGFloat = 4
+
+    var body: some View {
+        GeometryReader { geo in
+            let midX = geo.size.width / 2
+            let knobY = yPosition(for: value, height: geo.size.height)
+            let zeroY = yPosition(for: min(max(0, range.lowerBound), range.upperBound), height: geo.size.height)
+
+            ZStack {
+                Capsule()
+                    .fill(Color.primary.opacity(0.12))
+                    .frame(width: Self.trackWidth, height: geo.size.height - Self.knobSize)
+                    .position(x: midX, y: geo.size.height / 2)
+
+                Rectangle()
+                    .fill(Color.primary.opacity(0.25))
+                    .frame(width: Self.trackWidth + 6, height: 1)
+                    .position(x: midX, y: zeroY)
+
+                Capsule()
+                    .fill(tint == .primary ? Color.accentColor : tint)
+                    .frame(width: Self.trackWidth, height: abs(knobY - zeroY))
+                    .position(x: midX, y: (knobY + zeroY) / 2)
+
+                Circle()
+                    .fill(Color.white)
+                    .overlay(Circle().strokeBorder(Color.black.opacity(0.15)))
+                    .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
+                    .frame(width: Self.knobSize, height: Self.knobSize)
+                    .position(x: midX, y: knobY)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        set(self.value(forY: drag.location.y, height: geo.size.height))
+                    }
+            )
+        }
+        .background(ScrollWheelReader { steps in
+            set(value + Double(steps) * step)
+        })
+        .accessibilityElement()
+        .accessibilityLabel("Gain")
+        .accessibilityValue(String(format: "%+0.1f decibels", value))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: set(value + 1)
+            case .decrement: set(value - 1)
+            @unknown default: break
+            }
+        }
+    }
+
+    /// Clamps and only writes on a real change, because every write re-applies
+    /// the band to the EQ node.
+    private func set(_ newValue: Double) {
+        let clamped = min(max(newValue, range.lowerBound), range.upperBound)
+        if clamped != value { value = clamped }
+    }
+
+    /// The knob's centre stays inside the frame, so the usable track is the
+    /// height minus one knob.
+    private func yPosition(for value: Double, height: CGFloat) -> CGFloat {
+        let usable = max(1, height - Self.knobSize)
+        let fraction = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
+        return Self.knobSize / 2 + usable * CGFloat(1 - fraction)
+    }
+
+    private func value(forY y: CGFloat, height: CGFloat) -> Double {
+        let usable = max(1, height - Self.knobSize)
+        let clampedY = min(max(y, Self.knobSize / 2), height - Self.knobSize / 2)
+        let fraction = 1 - Double((clampedY - Self.knobSize / 2) / usable)
+        let raw = range.lowerBound + fraction * (range.upperBound - range.lowerBound)
+        return (raw / step).rounded() * step
+    }
+}
+
+// MARK: - Scroll Wheel
+
+/// Reports vertical scroll-wheel movement over its bounds as whole steps,
+/// positive for scrolling up. SwiftUI has no scroll-wheel event on macOS, so
+/// this watches scroll events with a local monitor rather than joining the
+/// responder chain: the view never takes a click, and horizontal scrolls pass
+/// through to the band row's `ScrollView` in 31-band overflow mode.
+private struct ScrollWheelReader: NSViewRepresentable {
+    let onScroll: (Int) -> Void
+
+    func makeNSView(context: Context) -> ScrollWheelView {
+        let view = ScrollWheelView()
+        view.onScroll = onScroll
+        return view
+    }
+
+    func updateNSView(_ nsView: ScrollWheelView, context: Context) {
+        nsView.onScroll = onScroll
+    }
+
+    final class ScrollWheelView: NSView {
+        var onScroll: ((Int) -> Void)?
+        private var monitor: Any?
+        private var accumulated: CGFloat = 0
+        /// Trackpad points of travel per step, so a swipe isn't a jump to ±24 dB.
+        private static let pointsPerStep: CGFloat = 6
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            removeMonitor()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self, self.handle(event) else { return event }
+                return nil
+            }
+        }
+
+        deinit { removeMonitor() }
+
+        private func removeMonitor() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        /// Returns true when the event was consumed.
+        private func handle(_ event: NSEvent) -> Bool {
+            guard event.window === window,
+                  bounds.contains(convert(event.locationInWindow, from: nil)),
+                  abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX)
+            else { return false }
+
+            // Physical "up" raises the gain whatever the natural-scrolling setting.
+            let deltaY = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaY : event.scrollingDeltaY
+            let steps: Int
+            if event.hasPreciseScrollingDeltas {
+                if event.phase == .began { accumulated = 0 }
+                accumulated += deltaY
+                steps = Int(accumulated / Self.pointsPerStep)
+                accumulated -= CGFloat(steps) * Self.pointsPerStep
+            } else {
+                // One wheel notch is one step; fast spins arrive as larger deltas.
+                steps = deltaY > 0 ? max(1, Int(deltaY.rounded())) : min(-1, Int(deltaY.rounded()))
+            }
+            if steps != 0 { onScroll?(steps) }
+            return true
+        }
     }
 }
 
