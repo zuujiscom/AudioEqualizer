@@ -227,6 +227,37 @@ struct EQPreset: Identifiable, Codable, Equatable {
         2500, 4000, 6300, 10000, 16000
     ]
 
+    /// How wide each band is, in octaves, for a layout of `count` bands.
+    ///
+    /// Neighbouring bands overlap and their gains add, so the width has to
+    /// shrink as the bands get closer together or every curve comes out
+    /// stronger than drawn. With one octave everywhere, a preset asking for
+    /// +4.5 dB of bass delivered +7.6 dB on 15 bands and +15.2 dB on 31.
+    /// The 15- and 31-band widths were chosen by measuring `AVAudioUnitEQ`
+    /// itself: with them every built-in preset lands within about a decibel
+    /// of its curve. Ten bands keep one octave, where the remaining error is
+    /// the layout being too coarse for a steep curve, not overlap.
+    static func bandwidth(forBandCount count: Int) -> Double {
+        switch count {
+        case 31: return 0.25
+        case 15: return 0.5
+        default: return 1.0
+        }
+    }
+
+    /// Bands saved before layouts had their own widths are one octave wide
+    /// whatever the layout. This gives such a list its layout's width, and
+    /// leaves alone any list whose widths have been set to something else.
+    static func withLayoutBandwidth(_ bands: [EQBand]) -> [EQBand] {
+        let width = bandwidth(forBandCount: bands.count)
+        guard width != 1.0, bands.allSatisfy({ $0.bandwidth == 1.0 }) else { return bands }
+        return bands.map { band in
+            var updated = band
+            updated.bandwidth = width
+            return updated
+        }
+    }
+
     static var defaultBands: [EQBand] {
         defaultFrequencies.map { EQBand(frequency: $0) }
     }

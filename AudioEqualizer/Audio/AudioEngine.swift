@@ -965,7 +965,7 @@ final class AudioEngine: NSObject, ObservableObject {
             return
         }
 
-        bands = preset.bands
+        bands = EQPreset.withLayoutBandwidth(preset.bands)
         if eqNode.bands.count != bands.count {
             rebuildEQNode()
         }
@@ -1143,7 +1143,7 @@ final class AudioEngine: NSObject, ObservableObject {
         defer { isApplyingProfile = false }
 
         let countChanged = profile.bands.count != bands.count
-        bands = profile.bands
+        bands = EQPreset.withLayoutBandwidth(profile.bands)
         masterGain = min(Self.maxGain, max(0, profile.masterGain))
 
         if countChanged {
@@ -1206,13 +1206,16 @@ final class AudioEngine: NSObject, ObservableObject {
         default: freqs = EQPreset.defaultFrequencies
         }
 
+        // The width belongs to the layout, not to the band it was copied
+        // from: see `EQPreset.bandwidth(forBandCount:)`.
+        let width = EQPreset.bandwidth(forBandCount: freqs.count)
         let oldBands = bands
         bands = freqs.map { f in
             let closest = oldBands.min { abs($0.frequency - f) < abs($1.frequency - f) }
             return EQBand(
                 frequency: f,
                 gain: closest?.gain ?? 0,
-                bandwidth: closest?.bandwidth ?? 1.0,
+                bandwidth: width,
                 filterType: closest?.filterType ?? .parametric
             )
         }
