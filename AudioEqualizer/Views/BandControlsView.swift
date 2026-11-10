@@ -9,26 +9,46 @@ struct BandControlsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("Equalizer Bands", systemImage: "slider.horizontal.3")
-                    .font(.headline)
+            HStack(spacing: 10) {
+                SectionTitle(text: "Equalizer", systemImage: "slider.vertical.3")
                 Spacer()
 
-                Picker("Bands", selection: bandCountSelection) {
-                    Text("10-Band").tag(10)
-                    Text("15-Band").tag(15)
-                    Text("31-Band").tag(31)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 220)
-
                 Button {
-                    showBandDetails.toggle()
+                    withAnimation(.spring(duration: 0.3)) { engine.resetToFlat() }
                 } label: {
-                    Image(systemName: showBandDetails ? "slider.horizontal.3" : "chevron.down.circle")
+                    Label("Flat", systemImage: "arrow.counterclockwise")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(isFlat ? 0.35 : 0.85))
+                        .padding(.horizontal, 9)
+                        .frame(height: 24)
+                        .background(Capsule().fill(Color.white.opacity(0.07)))
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .help("Show band details")
+                .disabled(isFlat)
+                .help("Set every band to 0 dB  (⇧⌘R)")
+
+                Picker("Bands", selection: bandCountSelection) {
+                    Text("10").tag(10)
+                    Text("15").tag(15)
+                    Text("31").tag(31)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 132)
+                .help("Number of bands")
+
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) { showBandDetails.toggle() }
+                } label: {
+                    Image(systemName: "tablecells")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(showBandDetails ? Theme.cyan : Color.white.opacity(0.6))
+                        .frame(width: 26, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Show every band's frequency, gain, Q and type")
             }
 
             amplificationRow
@@ -39,15 +59,11 @@ struct BandControlsView: View {
                 bandDetailsGrid
             }
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color.primary.opacity(0.08))
-        )
+        .card()
+    }
+
+    private var isFlat: Bool {
+        engine.bands.allSatisfy { $0.gain == 0 }
     }
 
     /// The bands are laid out to fit the panel: columns shrink toward
@@ -88,26 +104,38 @@ struct BandControlsView: View {
 
     private var amplificationRow: some View {
         HStack(spacing: 10) {
-            Image(systemName: "speaker.wave.3.fill")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text("PREAMP")
+                .font(.system(size: 9.5, weight: .semibold))
+                .tracking(1.1)
+                .foregroundStyle(.white.opacity(0.45))
             Slider(value: $engine.masterGain, in: 0.25...AudioEngine.maxGain, step: 0.05)
-                .tint(engine.masterGain > 1.5 ? .green : .orange)
+                .tint(engine.amplificationDB > 12 ? Theme.amber : Theme.mint)
             Text(String(format: "%+0.1f dB", engine.amplificationDB))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(engine.amplificationDB > 0 ? Color.green : Color.secondary)
-                .frame(width: 58, alignment: .trailing)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Theme.gainColor(engine.amplificationDB))
+                .frame(width: 64, alignment: .trailing)
+            Text(String(format: "×%.2f", engine.masterGain))
+                .font(.system(size: 10.5, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.4))
+                .frame(width: 44, alignment: .trailing)
             Button {
                 withAnimation(.spring(duration: 0.25)) {
                     engine.masterGain = 1.0
                 }
             } label: {
                 Image(systemName: "arrow.counterclockwise")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(engine.masterGain == 1 ? 0.25 : 0.75))
             }
             .buttonStyle(.plain)
-            .help("Reset amplification")
+            .disabled(engine.masterGain == 1)
+            .help("Reset the preamp to 0 dB")
         }
-        .padding(.horizontal, 2)
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white.opacity(0.04)))
     }
 
     private var bandCountSelection: Binding<Int> {
@@ -215,7 +243,7 @@ struct BandSlider: View {
             Text(gainText)
                 .font(.system(size: isCompact ? 8 : 9, weight: band.gain == 0 ? .regular : .semibold))
                 .monospacedDigit()
-                .foregroundStyle(gainColor)
+                .foregroundStyle(band.isEnabled ? gainColor : Color.white.opacity(0.3))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
@@ -230,11 +258,13 @@ struct BandSlider: View {
                 tint: gainColor
             )
             .frame(width: columnWidth, height: Self.trackLength)
+            .opacity(band.isEnabled ? 1 : 0.35)
 
             // Frequency label
             Text(band.frequencyLabel)
                 .font(.system(size: isCompact ? 8 : 10, weight: .medium))
                 .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.7))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
@@ -243,8 +273,11 @@ struct BandSlider: View {
                 band.isEnabled.toggle()
             } label: {
                 Circle()
-                    .fill(band.isEnabled ? Color.accentColor : Color.gray.opacity(0.3))
-                    .frame(width: 8, height: 8)
+                    .fill(band.isEnabled ? Theme.cyan : Color.white.opacity(0.18))
+                    .frame(width: 7, height: 7)
+                    .shadow(color: band.isEnabled ? Theme.cyan.opacity(0.7) : .clear, radius: 3)
+                    .frame(width: 16, height: 12)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(band.isEnabled ? "Disable band" : "Enable band")
@@ -260,11 +293,7 @@ struct BandSlider: View {
         }
     }
 
-    private var gainColor: Color {
-        if band.gain > 3 { return .green }
-        if band.gain < -3 { return .orange }
-        return .primary
-    }
+    private var gainColor: Color { Theme.gainColor(band.gain) }
 }
 
 // MARK: - Vertical Gain Slider
@@ -278,6 +307,7 @@ struct VerticalGainSlider: View {
     let step: Double
     let tint: Color
 
+    /// The cap's height; also the travel lost at each end of the track.
     private static let knobSize: CGFloat = 14
     private static let trackWidth: CGFloat = 4
 
@@ -287,27 +317,51 @@ struct VerticalGainSlider: View {
             let knobY = yPosition(for: value, height: geo.size.height)
             let zeroY = yPosition(for: min(max(0, range.lowerBound), range.upperBound), height: geo.size.height)
 
+            let capWidth = min(22, max(12, geo.size.width - 6))
+            let active = value != 0
+
             ZStack {
+                // Scale marks at ±12 dB, so a glance places the cap.
+                ForEach([-12.0, 12.0], id: \.self) { mark in
+                    Rectangle()
+                        .fill(Color.white.opacity(0.10))
+                        .frame(width: Self.trackWidth + 4, height: 1)
+                        .position(x: midX, y: yPosition(for: mark, height: geo.size.height))
+                }
+
                 Capsule()
-                    .fill(Color.primary.opacity(0.12))
+                    .fill(Color.black.opacity(0.45))
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.07)))
                     .frame(width: Self.trackWidth, height: geo.size.height - Self.knobSize)
                     .position(x: midX, y: geo.size.height / 2)
 
                 Rectangle()
-                    .fill(Color.primary.opacity(0.25))
-                    .frame(width: Self.trackWidth + 6, height: 1)
+                    .fill(Color.white.opacity(0.30))
+                    .frame(width: Self.trackWidth + 8, height: 1)
                     .position(x: midX, y: zeroY)
 
                 Capsule()
-                    .fill(tint == .primary ? Color.accentColor : tint)
+                    .fill(LinearGradient(colors: [tint, tint.opacity(0.45)],
+                                         startPoint: value >= 0 ? .top : .bottom,
+                                         endPoint: value >= 0 ? .bottom : .top))
                     .frame(width: Self.trackWidth, height: abs(knobY - zeroY))
                     .position(x: midX, y: (knobY + zeroY) / 2)
+                    .shadow(color: active ? tint.opacity(0.6) : .clear, radius: 4)
 
-                Circle()
-                    .fill(Color.white)
-                    .overlay(Circle().strokeBorder(Color.black.opacity(0.15)))
-                    .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
-                    .frame(width: Self.knobSize, height: Self.knobSize)
+                // A fader cap: wide, short, with a centre line in the gain's colour.
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(LinearGradient(colors: [Color(white: 0.98), Color(white: 0.74)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .overlay(
+                        Rectangle()
+                            .fill(active ? tint : Color.black.opacity(0.35))
+                            .frame(height: 2)
+                            .padding(.horizontal, 3)
+                    )
+                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(Color.black.opacity(0.25)))
+                    .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
+                    .frame(width: capWidth, height: Self.knobSize)
                     .position(x: midX, y: knobY)
             }
             .contentShape(Rectangle())
@@ -317,6 +371,9 @@ struct VerticalGainSlider: View {
                         set(self.value(forY: drag.location.y, height: geo.size.height))
                     }
             )
+            // Runs after the drag has moved the cap to the click, so the
+            // second click of a double-click lands on zero.
+            .simultaneousGesture(TapGesture(count: 2).onEnded { set(0) })
         }
         .background(ScrollWheelReader { steps in
             set(value + Double(steps) * step)

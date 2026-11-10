@@ -4,7 +4,7 @@ A system-wide equalizer for macOS. It shapes and boosts whatever your Mac is
 playing (music, videos, games, calls) on whichever output you are using, with
 no virtual audio driver to install.
 
-![Audio Equalizer's main window with its spectrum analyzer and 10-band equalizer, next to the visualizer window.](docs/screenshot.webp)
+![Audio Equalizer's main window, with the EQ curve drawn over the live spectrum above a 31-band equalizer, next to the visualizer window showing the Skyline mode.](docs/screenshot.webp)
 
 - **10, 15 or 31 band graphic EQ**, from 20 Hz to 20 kHz, ±24 dB per band.
 - **Master gain up to +24 dB**, for quiet laptops, speakers and headphones.
@@ -12,9 +12,13 @@ no virtual audio driver to install.
   more), plus your own. Presets can be saved, imported and exported as JSON.
 - **A profile for each output device.** A curve set for your headphones comes
   back automatically when you switch back to them; your TV keeps its own.
-- **Live spectrum analyzer** in the main window.
-- **A visualizer window** with 24 audio-driven modes, an Auto mode that cycles
-  through presets on the beat, and import for MilkDrop `.milk` presets.
+- **A response graph** that draws the EQ's curve over the live spectrum. Drag
+  across it to draw the curve you want; double-click a band to reset it.
+- **Bypass** (⌘B) to compare the sound with and without the EQ.
+- **A visualizer window** with 50 audio-driven modes — fractals, a raymarched
+  skyline, ridgelines, a retro sunset, particle swarms and more — a shuffle
+  that moves between them on the beat, and import for MilkDrop `.milk`
+  presets.
 
 ## How it works
 
@@ -92,16 +96,34 @@ back that device's saved curve.
 - **File → Save Current as Preset…** saves your curve.
 - **File → Import Preset…** and **Export Selected Preset…** share presets as
   JSON files.
-- The **Presets** menu lists every preset, and **Reset EQ to Flat** clears the
-  curve.
+- The row of chips above the graph applies a preset in one click; **+** saves
+  the current curve. Right-click one of your own to rename, export or delete it.
+- The **Presets** menu lists every preset, and **Reset EQ to Flat** (or the
+  **Flat** button) clears the curve.
 - Presets live in `~/Library/Application Support/AudioEqualizer/`. Use
   **File → Reveal Presets File in Finder** to get there.
 
 ### Visualizer
 
 Choose **Visualizer → Open Visualizer**, or pick a mode from the Visualizer
-menu. **Auto** cycles through presets, switching on a beat. Everything the
-visualizer draws is driven by the audio, so it sits still in silence.
+menu, or press the **Visualizer** button in the main window. **Shuffle** moves
+through every visualization at random — the hand-tuned presets, freshly
+remixed ones, and any MilkDrop presets you have imported — dissolving from one
+to the next on a beat. Everything the visualizer draws is driven by the audio,
+so it sits still in silence.
+
+Move the pointer over the window for its controls, or use the keyboard:
+
+| Key | Does |
+| --- | --- |
+| → or Space | Next visualization |
+| ← | Previous |
+| S | Shuffle on or off |
+| L | Hold the current one |
+| F | Full screen |
+
+The timer button sets how long each visualization plays, from 10 seconds to
+5 minutes.
 
 **MilkDrop presets:** choose **File → Import MilkDrop Presets…** and select
 `.milk` files or whole folders. Imported presets appear in the Visualizer menu.

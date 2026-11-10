@@ -57,6 +57,12 @@ struct AudioEqualizerApp: App {
                 .environmentObject(milkdropLibrary)
                 .frame(minWidth: 900, minHeight: 640)
                 .task {
+                    #if DEBUG
+                    if let gallery = DebugGallery.directory {
+                        DebugGallery.run(engine: audioEngine, directory: gallery)
+                        return
+                    }
+                    #endif
                     // The engine's device didSet runs during init, before this
                     // store exists, so the launch device is applied here.
                     guard audioEngine.deviceProfiles == nil else { return }
@@ -64,8 +70,9 @@ struct AudioEqualizerApp: App {
                     audioEngine.applyProfileForCurrentDevice()
                 }
         }
-        .windowStyle(.titleBar)
-        .windowToolbarStyle(.unified(showsTitle: true))
+        // No title bar: `HeaderBar` is drawn up into that space instead.
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1040, height: 790)
         .commands {
             // File: an EQ has no documents and no second window, so the
             // stock New/Open items are replaced with preset I/O.
@@ -163,6 +170,13 @@ struct AudioEqualizerApp: App {
 
                 Divider()
 
+                Button(audioEngine.isBypassed ? "Turn Bypass Off" : "Bypass EQ") {
+                    audioEngine.toggleBypass()
+                }
+                .keyboardShortcut("b", modifiers: [.command])
+
+                Divider()
+
                 Button("Refresh Devices") {
                     audioEngine.enumerateDevices()
                 }
@@ -193,10 +207,10 @@ struct AudioEqualizerApp: App {
 
                 // Selecting a mode also opens the window, so the menu works as
                 // a launcher rather than only as a switch for a window already
-                // on screen. Auto is a single top-level choice, not a section:
-                // a one-item section headed "Auto" containing "Auto" is only
-                // confusing, and the header is not clickable.
-                Button("Auto (cycle presets)") {
+                // on screen. Shuffle is a single top-level choice, not a
+                // section: a one-item section headed "Auto" containing "Auto"
+                // is only confusing, and the header is not clickable.
+                Button("Shuffle Everything") {
                     UserDefaults.standard.set(VisualizerMode.auto.rawValue, forKey: VisualizerMode.storageKey)
                     openVisualizerWindow()
                 }
@@ -238,7 +252,7 @@ struct AudioEqualizerApp: App {
                 .environmentObject(audioEngine)
                 .environmentObject(milkdropLibrary)
         }
-        .defaultSize(width: 960, height: 600)
+        .defaultSize(width: 1100, height: 680)
     }
 
     static let visualizerWindowID = "visualizer"

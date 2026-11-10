@@ -9,9 +9,10 @@ struct MainView: View {
     var body: some View {
         VStack(spacing: 0) {
             HeaderBar()
-            Divider()
+            Rectangle().fill(Theme.hairline).frame(height: 1)
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: 14) {
+                    PresetChips()
                     SpectrumView()
                     BandControlsView()
                         .frame(maxWidth: .infinity)
@@ -20,91 +21,133 @@ struct MainView: View {
             }
         }
         .frame(minWidth: 900, minHeight: 640)
-        .background(Color(nsColor: .windowBackgroundColor))
+        // Up into the hidden title bar, so the header shares its row with
+        // the traffic lights instead of sitting under an empty strip.
+        .ignoresSafeArea(.container, edges: .top)
+        .background(Theme.background.ignoresSafeArea())
+        .preferredColorScheme(.dark)
     }
 }
 
 // MARK: - Header Bar
 
-/// Presets, devices, and status all live here now; the former right-hand
-/// column is gone, so the band sliders get the full window width.
+/// Power, status, devices, presets, bypass and the visualizer all live here;
+/// there is no sidebar, so the graph and the faders get the full width. The
+/// window has no title bar of its own — this row is drawn up into it, which is
+/// why it starts clear of the traffic lights.
 struct HeaderBar: View {
     @EnvironmentObject private var engine: AudioEngine
+    @EnvironmentObject private var meters: MeterState
     @EnvironmentObject private var presets: PresetManager
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         HStack(spacing: 10) {
-            // Power / engine status
+            PowerButton()
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Audio Equalizer")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                statusLine
+            }
+            .padding(.trailing, 6)
+
+            Spacer(minLength: 8)
+
+            DeviceMenu()
+            PresetMenu()
+
             Button {
-                engine.isRunning ? engine.stop() : engine.start()
+                engine.toggleBypass()
             } label: {
-                Image(systemName: "power")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(engine.isRunning ? Color.green : Color.gray)
-                    .frame(width: 32, height: 32)
-                    .background(Circle().fill(engine.isRunning ? Color.green.opacity(0.15) : Color.gray.opacity(0.1)))
+                Label("Bypass", systemImage: engine.isBypassed ? "circle.slash.fill" : "circle.slash")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(engine.isBypassed ? Theme.amber : Color.white.opacity(0.85))
+                    .pill(active: engine.isBypassed, tint: Theme.amber)
             }
             .buttonStyle(.plain)
-            .help(engine.isRunning ? "Stop" : "Start")
+            .help("Hear the audio without the EQ, to compare  (⌘B)")
 
-            Divider().frame(height: 24)
-
-            PresetMenu()
-            DeviceMenu()
-            StatusMenu()
-
-            Spacer()
-
-            // Amplification display (the headline feature)
-            HStack(spacing: 8) {
-                Image(systemName: engine.masterGain > 1 ? "speaker.wave.2.fill" : "speaker.wave.1.fill")
-                    .foregroundStyle(engine.masterGain > 1 ? .green : .secondary)
-                Text(String(format: "%+0.1f dB", engine.amplificationDB))
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                Text(String(format: "x%.1f", engine.masterGain))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+            Button {
+                openWindow(id: AudioEqualizerApp.visualizerWindowID)
+            } label: {
+                Label("Visualizer", systemImage: "sparkles")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .background(Capsule().fill(Theme.signal).opacity(0.85))
+                    .contentShape(Capsule())
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color.green.opacity(0.08)))
+            .buttonStyle(.plain)
+            .help("Open the visualizer  (⇧⌘V)")
 
-
-            // Status dot
-            Circle()
-                .fill(engine.isRunning ? Color.green : Color.gray.opacity(0.4))
-                .frame(width: 8, height: 8)
-                .padding(.horizontal, 4)
+            StatusMenu()
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
+        .padding(.leading, 84)
+        .padding(.trailing, 14)
+        .frame(height: 54)
+        .background(Color.white.opacity(0.025))
         .onChange(of: presets.selectedPresetID) { _, newID in
             if let presetID = newID, let preset = presets.preset(withID: presetID) {
                 engine.applyPreset(preset)
             }
         }
     }
+
+    @ViewBuilder
+    private var statusLine: some View {
+        if let error = engine.routeErrorMessage {
+            Text(error)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(Theme.amber)
+                .lineLimit(1)
+        } else if engine.isRunning {
+            HStack(spacing: 5) {
+                Circle().fill(engine.isBypassed ? Theme.amber : Theme.mint).frame(width: 6, height: 6)
+                Text(engine.isBypassed ? "Bypassed" : "Live")
+                    .foregroundStyle(engine.isBypassed ? Theme.amber : Theme.mint)
+                Text("· \(engine.outputFormat)")
+                    .foregroundStyle(.white.opacity(0.45))
+            }
+            .font(.system(size: 10.5, weight: .medium))
+            .lineLimit(1)
+        } else {
+            Text("Off — system audio is untouched")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.45))
+                .lineLimit(1)
+        }
+    }
 }
 
-// MARK: - Volume Slider
+// MARK: - Power
 
-struct VolumeSlider: View {
-    @Binding var value: Double
+struct PowerButton: View {
+    @EnvironmentObject private var engine: AudioEngine
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "speaker.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-            Slider(value: $value, in: 0...AudioEngine.maxGain, step: 0.1)
-                .frame(width: 120)
-            Image(systemName: "speaker.wave.3.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+        Button {
+            engine.isRunning ? engine.stop() : engine.start()
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(engine.isRunning ? Theme.mint.opacity(0.18) : Color.white.opacity(0.06))
+                Circle()
+                    .strokeBorder(engine.isRunning ? Theme.mint.opacity(0.9) : Color.white.opacity(0.18),
+                                  lineWidth: 1.5)
+                Image(systemName: "power")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(engine.isRunning ? Theme.mint : Color.white.opacity(0.6))
+            }
+            .frame(width: 34, height: 34)
+            .shadow(color: engine.isRunning ? Theme.mint.opacity(0.55) : .clear, radius: 8)
+            .contentShape(Circle())
         }
-        .help("Master Gain 0–16x")
+        .buttonStyle(.plain)
+        .animation(.easeOut(duration: 0.2), value: engine.isRunning)
+        .help(engine.isRunning ? "Stop  (⌘↩)" : "Start  (⌘↩)")
     }
 }
 
@@ -113,4 +156,5 @@ struct VolumeSlider: View {
         .environmentObject(AudioEngine())
         .environmentObject(AudioEngine().meters)
         .environmentObject(PresetManager())
+        .environmentObject(DeviceProfileStore())
 }

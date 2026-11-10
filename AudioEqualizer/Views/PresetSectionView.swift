@@ -40,12 +40,16 @@ struct PresetMenu: View {
             }
             Button("Import…") { PresetActions.importPreset(into: presets) }
         } label: {
-            Label(presets.selectedPreset?.name ?? "Presets", systemImage: "slider.horizontal.3")
+            Label("Presets", systemImage: "square.stack.3d.up")
                 .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.85))
+                .pill()
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
         .fixedSize()
-        .help("Presets")
+        .help("Save, import and manage presets")
     }
 
     private func presetButton(_ preset: EQPreset) -> some View {
@@ -56,6 +60,86 @@ struct PresetMenu: View {
                 Label(preset.name, systemImage: "checkmark")
             } else {
                 Text(preset.name)
+            }
+        }
+    }
+}
+
+// MARK: - Preset chips
+
+/// Every preset one click away, in a row above the graph. Like the menu, a
+/// chip only sets `selectedPresetID` and lets `HeaderBar` apply it — except
+/// for the chip that is already selected, which re-applies directly so a curve
+/// that has since been edited can be put back.
+struct PresetChips: View {
+    @EnvironmentObject private var engine: AudioEngine
+    @EnvironmentObject private var presets: PresetManager
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(EQPreset.allBuiltin) { chip($0) }
+                    if !presets.customPresets.isEmpty {
+                        Rectangle().fill(Theme.hairline).frame(width: 1, height: 16).padding(.horizontal, 4)
+                        ForEach(presets.customPresets) { chip($0, custom: true) }
+                    }
+                }
+                .padding(.vertical, 1)
+                .padding(.horizontal, 1)
+            }
+            .mask(
+                LinearGradient(stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black, location: 0.94),
+                    .init(color: .clear, location: 1)
+                ], startPoint: .leading, endPoint: .trailing)
+            )
+
+            Button {
+                PresetActions.saveCurrent(bands: engine.bands, in: presets)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .frame(width: 26, height: 26)
+                    .background(Circle().fill(Color.white.opacity(0.07)))
+                    .overlay(Circle().strokeBorder(Color.white.opacity(0.10)))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Save the current curve as a preset  (⌘S)")
+        }
+    }
+
+    private func chip(_ preset: EQPreset, custom: Bool = false) -> some View {
+        let selected = presets.selectedPresetID == preset.id
+        return Button {
+            if selected {
+                engine.applyPreset(preset)
+            } else {
+                presets.selectedPresetID = preset.id
+            }
+        } label: {
+            Text(preset.name)
+                .font(.system(size: 11.5, weight: selected ? .semibold : .medium))
+                .foregroundStyle(selected ? Color.black.opacity(0.85) : Color.white.opacity(0.78))
+                .padding(.horizontal, 11)
+                .frame(height: 26)
+                .background(
+                    Capsule().fill(selected ? AnyShapeStyle(Theme.signal) : AnyShapeStyle(Color.white.opacity(0.06)))
+                )
+                .overlay(Capsule().strokeBorder(Color.white.opacity(selected ? 0 : 0.10)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            if custom {
+                Button("Rename…") { PresetActions.rename(preset, in: presets) }
+                Button("Duplicate") { presets.duplicatePreset(preset.id) }
+                Button("Export…") { PresetActions.export(preset, from: presets) }
+                Divider()
+                Button("Delete", role: .destructive) { presets.deletePreset(preset.id) }
             }
         }
     }
@@ -73,9 +157,11 @@ struct StatusMenu: View {
         Button {
             showStatus.toggle()
         } label: {
-            Label(engine.isRunning ? "Running" : "Stopped", systemImage: "info.circle")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(engine.isRunning ? Color.green : Color.secondary)
+            Image(systemName: "info.circle")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.white.opacity(0.6))
+                .frame(width: 28, height: 30)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help("Engine status")
@@ -103,7 +189,7 @@ struct StatusMenu: View {
                     }
                     .controlSize(.small)
                     .buttonStyle(.borderedProminent)
-                    .tint(engine.isRunning ? .red : .green)
+                    .tint(engine.isRunning ? Theme.red : Theme.mint)
                 }
             }
             .padding(14)

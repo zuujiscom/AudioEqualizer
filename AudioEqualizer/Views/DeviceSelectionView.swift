@@ -61,12 +61,17 @@ struct DeviceMenu: View {
                 currentOutputName,
                 systemImage: engine.routeErrorMessage != nil
                     ? "exclamationmark.triangle.fill"
-                    : (engine.currentDeviceHasProfile && profiles.isEnabled ? "person.crop.circle.badge.checkmark" : "cable.connector")
+                    : (engine.currentDeviceHasProfile && profiles.isEnabled ? "headphones.circle.fill" : "hifispeaker")
             )
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(engine.routeErrorMessage == nil ? Color.primary : Color.orange)
+                .foregroundStyle(engine.routeErrorMessage == nil ? Color.white.opacity(0.85) : Theme.amber)
+                .lineLimit(1)
+                .frame(maxWidth: 220)
+                .pill(active: engine.routeErrorMessage != nil, tint: Theme.amber)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
         .fixedSize()
         .help(engine.routeErrorMessage ?? "Output device")
     }

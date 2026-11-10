@@ -20,6 +20,10 @@
 		100000000000000000000052 /* MilkdropLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000052 /* MilkdropLibrary.swift */; };
 		100000000000000000000009 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000009 /* MainView.swift */; };
 		10000000000000000000000B /* SpectrumView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000B /* SpectrumView.swift */; };
+		100000000000000000000060 /* VisualizerShaders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000060 /* VisualizerShaders.swift */; };
+		100000000000000000000061 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000061 /* Theme.swift */; };
+		100000000000000000000062 /* DebugGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000062 /* DebugGallery.swift */; };
+		100000000000000000000063 /* EQResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000063 /* EQResponse.swift */; };
 		100000000000000000000030 /* VisualizerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000030 /* VisualizerView.swift */; };
 		10000000000000000000000C /* BandControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000C /* BandControlsView.swift */; };
 		10000000000000000000000E /* DeviceSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000E /* DeviceSelectionView.swift */; };
@@ -41,6 +45,10 @@
 		200000000000000000000052 /* MilkdropLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MilkdropLibrary.swift; sourceTree = "<group>"; };
 		200000000000000000000009 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		20000000000000000000000B /* SpectrumView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpectrumView.swift; sourceTree = "<group>"; };
+		200000000000000000000060 /* VisualizerShaders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualizerShaders.swift; sourceTree = "<group>"; };
+		200000000000000000000061 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		200000000000000000000062 /* DebugGallery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugGallery.swift; sourceTree = "<group>"; };
+		200000000000000000000063 /* EQResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQResponse.swift; sourceTree = "<group>"; };
 		200000000000000000000030 /* VisualizerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualizerView.swift; sourceTree = "<group>"; };
 		20000000000000000000000C /* BandControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BandControlsView.swift; sourceTree = "<group>"; };
 		20000000000000000000000E /* DeviceSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSelectionView.swift; sourceTree = "<group>"; };
@@ -108,6 +116,7 @@
 				200000000000000000000006 /* EQBand.swift */,
 				200000000000000000000041 /* DeviceProfile.swift */,
 				200000000000000000000007 /* EQPreset.swift */,
+				200000000000000000000063 /* EQResponse.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -128,6 +137,9 @@
 				200000000000000000000009 /* MainView.swift */,
 				20000000000000000000000B /* SpectrumView.swift */,
 				200000000000000000000030 /* VisualizerView.swift */,
+				200000000000000000000060 /* VisualizerShaders.swift */,
+				200000000000000000000061 /* Theme.swift */,
+				200000000000000000000062 /* DebugGallery.swift */,
 				20000000000000000000000C /* BandControlsView.swift */,
 				20000000000000000000000E /* DeviceSelectionView.swift */,
 				20000000000000000000000F /* PresetSectionView.swift */,
@@ -235,6 +247,10 @@
 				100000000000000000000052 /* MilkdropLibrary.swift in Sources */,
 				100000000000000000000009 /* MainView.swift in Sources */,
 				10000000000000000000000B /* SpectrumView.swift in Sources */,
+				100000000000000000000060 /* VisualizerShaders.swift in Sources */,
+				100000000000000000000061 /* Theme.swift in Sources */,
+				100000000000000000000062 /* DebugGallery.swift in Sources */,
+				100000000000000000000063 /* EQResponse.swift in Sources */,
 				100000000000000000000030 /* VisualizerView.swift in Sources */,
 				10000000000000000000000C /* BandControlsView.swift in Sources */,
 				10000000000000000000000E /* DeviceSelectionView.swift in Sources */,
