@@ -55,7 +55,7 @@ struct AudioEqualizerApp: App {
                 .environmentObject(presetManager)
                 .environmentObject(deviceProfiles)
                 .environmentObject(milkdropLibrary)
-                .frame(minWidth: 900, minHeight: 640)
+                .frame(minWidth: 900, minHeight: 700)
                 .task {
                     #if DEBUG
                     if let gallery = DebugGallery.directory {

@@ -43,7 +43,12 @@ extension View {
         self
             .padding(padding)
             .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.cardFill))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.cardStroke))
+            // Lit from above: the rim is brighter at the top edge.
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(
+                LinearGradient(colors: [Color.white.opacity(0.17), Color.white.opacity(0.04)],
+                               startPoint: .top, endPoint: .bottom)
+            ))
+            .shadow(color: .black.opacity(0.28), radius: 14, y: 6)
     }
 
     /// A small rounded control surface for the header's menus and toggles.
@@ -58,6 +63,23 @@ extension View {
                 Capsule().strokeBorder(active ? tint.opacity(0.55) : Color.white.opacity(0.10))
             )
             .contentShape(Capsule())
+    }
+}
+
+/// The window's backdrop: the dark gradient, with a wash of the signal
+/// colours bleeding in from the top corners so the cards have something to
+/// sit in front of.
+struct AmbientBackground: View {
+    var body: some View {
+        ZStack {
+            Theme.background
+            RadialGradient(colors: [Theme.cyan.opacity(0.16), .clear],
+                           center: .topLeading, startRadius: 0, endRadius: 620)
+            RadialGradient(colors: [Theme.pink.opacity(0.13), .clear],
+                           center: .topTrailing, startRadius: 0, endRadius: 560)
+            RadialGradient(colors: [Theme.violet.opacity(0.12), .clear],
+                           center: .bottom, startRadius: 0, endRadius: 700)
+        }
     }
 }
 

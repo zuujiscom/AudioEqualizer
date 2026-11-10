@@ -72,7 +72,7 @@ struct BandControlsView: View {
     /// A fixed column width made 31-band mode several screens wide.
     private static let columnSpacing: CGFloat = 2
     private static let minColumnWidth: CGFloat = 20
-    private static let maxColumnWidth: CGFloat = 72
+    private static let maxColumnWidth: CGFloat = 120
 
     private var bandRow: some View {
         GeometryReader { geo in
@@ -81,24 +81,33 @@ struct BandControlsView: View {
             let ideal = (geo.size.width - gaps) / CGFloat(count)
             let column = min(Self.maxColumnWidth, max(Self.minColumnWidth, ideal))
             let fits = column * CGFloat(count) + gaps <= geo.size.width + 0.5
+            let track = max(90, geo.size.height - BandSlider.labelsHeight)
 
             let row = HStack(alignment: .bottom, spacing: Self.columnSpacing) {
                 ForEach(Array(engine.bands.enumerated()), id: \.element.id) { index, _ in
                     BandSlider(
                         band: binding(forIndex: index),
                         index: index,
-                        columnWidth: column
+                        columnWidth: column,
+                        trackLength: track
                     )
                 }
             }
 
             if fits {
-                row.frame(width: geo.size.width, alignment: .center)
+                row
+                    .background(alignment: .topLeading) {
+                        BandLevelBackdrop(
+                            frequencies: engine.bands.map(\.frequency),
+                            column: column, spacing: Self.columnSpacing, trackLength: track
+                        )
+                    }
+                    .frame(width: geo.size.width, alignment: .center)
             } else {
                 ScrollView(.horizontal, showsIndicators: true) { row }
             }
         }
-        .frame(height: BandSlider.rowHeight)
+        .frame(minHeight: BandSlider.minRowHeight, idealHeight: BandSlider.minRowHeight, maxHeight: 360)
         .padding(.vertical, 6)
     }
 
@@ -220,10 +229,14 @@ struct BandSlider: View {
     /// Horizontal space this column may occupy — see `BandControlsView.bandRow`.
     let columnWidth: CGFloat
 
-    /// Track length of the vertical slider.
-    static let trackLength: CGFloat = 130
-    /// Total height of a band column, so the row can be given a fixed height.
-    static let rowHeight: CGFloat = trackLength + 56
+    /// Track length of the vertical slider; grows with the window.
+    let trackLength: CGFloat
+
+    /// Height of everything in a column that is not the track.
+    static let labelsHeight: CGFloat = 56
+    /// Distance from the top of a column to the top of its track.
+    static let trackTop: CGFloat = 15
+    static let minRowHeight: CGFloat = 130 + labelsHeight
 
     private let gainRange: ClosedRange<Double> = -24...24
 
@@ -243,7 +256,7 @@ struct BandSlider: View {
             Text(gainText)
                 .font(.system(size: isCompact ? 8 : 9, weight: band.gain == 0 ? .regular : .semibold))
                 .monospacedDigit()
-                .foregroundStyle(band.isEnabled ? gainColor : Color.white.opacity(0.3))
+                .foregroundStyle(band.isEnabled && band.gain != 0 ? gainColor : Color.white.opacity(0.28))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
@@ -257,7 +270,7 @@ struct BandSlider: View {
                 step: 0.5,
                 tint: gainColor
             )
-            .frame(width: columnWidth, height: Self.trackLength)
+            .frame(width: columnWidth, height: trackLength)
             .opacity(band.isEnabled ? 1 : 0.35)
 
             // Frequency label
@@ -296,6 +309,69 @@ struct BandSlider: View {
     private var gainColor: Color { Theme.gainColor(band.gain) }
 }
 
+// MARK: - Live level behind the faders
+
+/// A soft column of light behind each fader, as tall as the signal at that
+/// band's frequency — so you can see what a fader is acting on.
+///
+/// Its own view, and one `Canvas`, on purpose: it follows the meters, and the
+/// faders must not. Hanging this off `BandSlider` would invalidate every
+/// slider twenty times a second.
+struct BandLevelBackdrop: View {
+    @EnvironmentObject private var engine: AudioEngine
+    @EnvironmentObject private var meters: MeterState
+    @State private var smoother = SpectrumSmoother()
+
+    let frequencies: [Double]
+    let column: CGFloat
+    let spacing: CGFloat
+    let trackLength: CGFloat
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !engine.isRunning)) { timeline in
+            Canvas(opaque: false, rendersAsynchronously: false) { context, size in
+                smoother.step(toward: meters.snapshot.spectrum, at: timeline.date, live: engine.isRunning)
+                guard engine.isRunning, !frequencies.isEmpty else { return }
+
+                let values = smoother.values
+                let bottom = BandSlider.trackTop + trackLength - 7
+                let reach = trackLength - 14
+                let width = min(column - 2, 18)
+                for (index, frequency) in frequencies.enumerated() {
+                    let t = log10(min(max(frequency, 20), 20_000) / 20) / 3
+                    let bin = min(values.count - 1, max(0, Int(t * Double(values.count))))
+                    let level = CGFloat(min(1, max(0, values[bin])))
+                    guard level > 0.01 else { continue }
+
+                    let centre = CGFloat(index) * (column + spacing) + column / 2
+                    let height = level * reach
+                    let rect = CGRect(x: centre - width / 2, y: bottom - height, width: width, height: height)
+                    let tint = Self.tint(at: Double(index) / Double(max(1, frequencies.count - 1)))
+                    context.fill(
+                        Path(roundedRect: rect, cornerRadius: 3),
+                        with: .linearGradient(
+                            Gradient(colors: [tint.opacity(0.34), tint.opacity(0.03)]),
+                            startPoint: CGPoint(x: 0, y: rect.minY), endPoint: CGPoint(x: 0, y: rect.maxY)
+                        )
+                    )
+                    context.fill(
+                        Path(roundedRect: CGRect(x: rect.minX, y: rect.minY, width: width, height: 1.5),
+                             cornerRadius: 0.75),
+                        with: .color(tint.opacity(0.75))
+                    )
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// The signal gradient, sampled: cyan at the low end, pink at the top.
+    private static func tint(at t: Double) -> Color {
+        t < 0.5 ? Theme.cyan.mix(with: Theme.violet, by: t * 2)
+                : Theme.violet.mix(with: Theme.pink, by: (t - 0.5) * 2)
+    }
+}
+
 // MARK: - Vertical Gain Slider
 
 /// A vertical slider whose knob follows the pointer's vertical position and
@@ -322,16 +398,15 @@ struct VerticalGainSlider: View {
 
             ZStack {
                 // Scale marks at ±12 dB, so a glance places the cap.
-                ForEach([-12.0, 12.0], id: \.self) { mark in
+                ForEach([-18.0, -12.0, -6.0, 6.0, 12.0, 18.0], id: \.self) { mark in
                     Rectangle()
-                        .fill(Color.white.opacity(0.10))
-                        .frame(width: Self.trackWidth + 4, height: 1)
+                        .fill(Color.white.opacity(abs(mark) == 12 ? 0.16 : 0.08))
+                        .frame(width: Self.trackWidth + (abs(mark) == 12 ? 6 : 3), height: 1)
                         .position(x: midX, y: yPosition(for: mark, height: geo.size.height))
                 }
 
                 Capsule()
-                    .fill(Color.black.opacity(0.45))
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.07)))
+                    .fill(Color.white.opacity(0.10))
                     .frame(width: Self.trackWidth, height: geo.size.height - Self.knobSize)
                     .position(x: midX, y: geo.size.height / 2)
 

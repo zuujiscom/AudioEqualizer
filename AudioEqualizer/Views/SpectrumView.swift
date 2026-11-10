@@ -90,7 +90,7 @@ struct SpectrumView: View {
                     }
                 }
             }
-            .frame(height: 250)
+            .frame(minHeight: 190, idealHeight: 250, maxHeight: .infinity)
             .background(Theme.well)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.hairline))
@@ -412,8 +412,9 @@ private struct GraphLayout {
 /// Eases the drawn spectrum toward the 20 Hz meter snapshots so the graph
 /// moves at display rate, and tracks a slowly falling peak for each bin.
 /// A class rather than `@State` values: it is advanced from inside the
-/// `Canvas` renderer, where view state cannot be written.
-private final class SpectrumSmoother {
+/// `Canvas` renderer, where view state cannot be written. Each view that
+/// draws the spectrum owns its own.
+final class SpectrumSmoother {
     private(set) var values = [Float](repeating: 0, count: 64)
     private(set) var peaks = [Float](repeating: 0, count: 64)
     private var last: Date?

@@ -4,7 +4,7 @@ A system-wide equalizer for macOS. It shapes and boosts whatever your Mac is
 playing (music, videos, games, calls) on whichever output you are using, with
 no virtual audio driver to install.
 
-![Audio Equalizer's main window, with the EQ curve drawn over the live spectrum above a 31-band equalizer, next to the visualizer window showing the Skyline mode.](docs/screenshot.webp)
+![Audio Equalizer's main window with the Rock preset applied: the EQ curve drawn over the live spectrum, above a 31-band equalizer whose faders are lit by the signal at each band, next to the visualizer window showing the Skyline mode.](docs/screenshot.webp)
 
 - **10, 15 or 31 band graphic EQ**, from 20 Hz to 20 kHz, ±24 dB per band.
 - **Master gain up to +24 dB**, for quiet laptops, speakers and headphones.

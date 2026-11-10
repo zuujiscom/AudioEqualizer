@@ -10,21 +10,27 @@ struct MainView: View {
         VStack(spacing: 0) {
             HeaderBar()
             Rectangle().fill(Theme.hairline).frame(height: 1)
-            ScrollView {
-                VStack(spacing: 14) {
-                    PresetChips()
-                    SpectrumView()
-                    BandControlsView()
-                        .frame(maxWidth: .infinity)
+            // The graph and the faders stretch to fill whatever height the
+            // window has; the scroll view only matters once the band details
+            // table is open and the content outgrows it.
+            GeometryReader { geo in
+                ScrollView {
+                    VStack(spacing: 14) {
+                        PresetChips()
+                        SpectrumView()
+                        BandControlsView()
+                            .frame(maxWidth: .infinity)
+                    }
+                    .padding(16)
+                    .frame(minHeight: geo.size.height)
                 }
-                .padding(16)
             }
         }
-        .frame(minWidth: 900, minHeight: 640)
+        .frame(minWidth: 900, minHeight: 700)
         // Up into the hidden title bar, so the header shares its row with
         // the traffic lights instead of sitting under an empty strip.
         .ignoresSafeArea(.container, edges: .top)
-        .background(Theme.background.ignoresSafeArea())
+        .background(AmbientBackground().ignoresSafeArea())
         .preferredColorScheme(.dark)
     }
 }
