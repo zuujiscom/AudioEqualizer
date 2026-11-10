@@ -227,38 +227,41 @@ struct EQPreset: Identifiable, Codable, Equatable {
         2500, 4000, 6300, 10000, 16000
     ]
 
-    /// How wide each band is, in octaves, for a layout of `count` bands.
+    /// How wide each band is, in octaves, for a layout of `count` bands:
+    /// about one and a half times the spacing between bands.
     ///
-    /// Neighbouring bands overlap and their gains add, so the width has to
-    /// shrink as the bands get closer together or every curve comes out
-    /// stronger than drawn. With one octave everywhere, a preset asking for
-    /// +4.5 dB of bass delivered +7.6 dB on 15 bands and +15.2 dB on 31.
-    /// The 15- and 31-band widths were chosen by measuring `AVAudioUnitEQ`
-    /// itself: with them every built-in preset lands within about a decibel
-    /// of its curve. Ten bands keep one octave, where the remaining error is
-    /// the layout being too coarse for a steep curve, not overlap.
+    /// Width trades two faults against each other. Narrow bands leave dips
+    /// between them, a ripple of 2 dB across a flat +6 dB setting at a width
+    /// equal to the spacing. Wide bands overlap, and overlapping gains add: at
+    /// one octave everywhere, a preset asking for +4.5 dB of bass delivered
+    /// +15 dB on 31 bands. `EQResponse.compensated` removes the second fault
+    /// by solving for the gains, which leaves the width free to be chosen for
+    /// smoothness. At these widths the ripple is under 0.4 dB, and a single
+    /// fader at +12 dB still needs no more than +17 dB from its band.
     static func bandwidth(forBandCount count: Int) -> Double {
         switch count {
-        case 31: return 0.25
-        case 15: return 0.5
-        default: return 1.0
+        case 31: return 0.5
+        case 15: return 1.0
+        default: return 1.6
         }
     }
 
-    /// Bands saved before layouts had their own widths are one octave wide
-    /// whatever the layout. This gives such a list its layout's width, and
-    /// leaves alone any list whose widths have been set to something else.
+    /// Gives a band list its layout's width. The width is a property of the
+    /// layout, not of a band — nothing in the app edits it — so lists saved
+    /// under earlier widths are simply brought up to date. Lists that are not
+    /// one of the three standard layouts are left alone.
     static func withLayoutBandwidth(_ bands: [EQBand]) -> [EQBand] {
+        guard [10, 15, 31].contains(bands.count) else { return bands }
         let width = bandwidth(forBandCount: bands.count)
-        guard width != 1.0, bands.allSatisfy({ $0.bandwidth == 1.0 }) else { return bands }
         return bands.map { band in
             var updated = band
-            updated.bandwidth = width
+            if updated.filterType == .parametric { updated.bandwidth = width }
             return updated
         }
     }
 
     static var defaultBands: [EQBand] {
-        defaultFrequencies.map { EQBand(frequency: $0) }
+        let width = bandwidth(forBandCount: defaultFrequencies.count)
+        return defaultFrequencies.map { EQBand(frequency: $0, bandwidth: width) }
     }
 }

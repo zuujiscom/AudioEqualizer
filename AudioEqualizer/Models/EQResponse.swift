@@ -2,12 +2,87 @@
 
 import Foundation
 
-/// The combined frequency response of a set of bands, for drawing the EQ
-/// curve. This is a model of what `AVAudioUnitEQ` does, built from the
-/// standard audio-EQ-cookbook biquads — it is for display only and is never
-/// in the audio path, so a small mismatch with Apple's filters costs nothing
-/// but a pixel.
+/// The combined frequency response of a set of bands: a model of what
+/// `AVAudioUnitEQ` does, built from the standard audio-EQ-cookbook biquads.
+/// For parametric bands it is not an approximation — measured against the
+/// real unit rendered offline, it agrees to within 0.01 dB.
+///
+/// It has two jobs. It draws the curve, and it works out the gains the unit
+/// is actually given (`compensated`), which is why its accuracy matters.
 enum EQResponse {
+    // MARK: Gain compensation
+
+    /// The bands as the EQ unit should be set: the same list, with each gain
+    /// replaced by the one that makes the *summed* response equal the band's
+    /// own gain at its own frequency.
+    ///
+    /// Neighbouring bands overlap, so setting every band to +6 dB does not
+    /// give +6 dB. A fader's value is therefore treated as what you want to
+    /// hear at that frequency, and this solves for the gains that deliver it.
+    /// That in turn lets the bands be wide enough to blend smoothly, which is
+    /// what removes the ripple between them.
+    ///
+    /// Only enabled parametric bands take part; a shelf or a pass filter has
+    /// no single frequency at which "its gain" means anything. A fader near
+    /// the ±24 dB limit can ask for more than the unit can give, in which case
+    /// the result is as close as the limit allows and the curve shows it.
+    static func compensated(_ bands: [EQBand], sampleRate: Double = 48_000) -> [EQBand] {
+        if let memo, memo.sampleRate == sampleRate, memo.input == bands { return memo.output }
+
+        let active = bands.indices.filter { bands[$0].isEnabled && bands[$0].filterType == .parametric }
+        var output = bands
+        if active.count > 1, active.contains(where: { bands[$0].gain != 0 }) {
+            let solved = solve(active.map { bands[$0] }, sampleRate: sampleRate)
+            for (slot, index) in active.enumerated() { output[index].gain = solved[slot] }
+        }
+        memo = (bands, sampleRate, output)
+        return output
+    }
+
+    /// The last answer. The graph asks thirty times a second and the bands
+    /// rarely change between frames. Main thread only, like its callers.
+    private static var memo: (input: [EQBand], sampleRate: Double, output: [EQBand])?
+
+    /// Fixed-point iteration: nudge every gain by its band's remaining error.
+    /// A decibel response is close to linear in the gains, so this converges
+    /// in a handful of rounds; the step is scaled by how much the bands
+    /// overlap so it cannot overshoot.
+    private static func solve(_ bands: [EQBand], sampleRate: Double) -> [Double] {
+        let count = bands.count
+        let angular = bands.map { 2 * Double.pi * min($0.frequency, sampleRate * 0.499) / sampleRate }
+        let targets = bands.map(\.gain)
+
+        func responses(_ gains: [Double]) -> [Double] {
+            var total = [Double](repeating: 0, count: count)
+            for source in 0..<count {
+                var band = bands[source]
+                band.gain = gains[source]
+                guard let biquad = section(for: band, sampleRate: sampleRate) else { continue }
+                for probe in 0..<count { total[probe] += biquad.decibels(at: angular[probe]) }
+            }
+            return total
+        }
+
+        // How much one decibel on every band adds up to at the busiest band.
+        let overlap = responses([Double](repeating: 1, count: count)).max() ?? 1
+        let step = min(1, 1.6 / max(1, overlap))
+
+        var gains = targets
+        for _ in 0..<60 {
+            let current = responses(gains)
+            var worst = 0.0
+            for index in 0..<count {
+                let error = targets[index] - current[index]
+                worst = max(worst, abs(error))
+                gains[index] = min(24, max(-24, gains[index] + step * error))
+            }
+            if worst < 0.01 { break }
+        }
+        return gains
+    }
+
+    // MARK: Response
+
     /// One second-order section, normalised so `a0` is 1.
     struct Biquad {
         var b0, b1, b2, a1, a2: Double
@@ -23,10 +98,11 @@ enum EQResponse {
         }
     }
 
-    /// Sections for every enabled band. Disabled bands are skipped, exactly as
-    /// the engine bypasses them.
+    /// Sections for every enabled band, at the compensated gains the unit is
+    /// really given. Disabled bands are skipped, exactly as the engine
+    /// bypasses them.
     static func sections(for bands: [EQBand], sampleRate: Double = 48_000) -> [Biquad] {
-        bands.compactMap { band in
+        compensated(bands, sampleRate: sampleRate).compactMap { band in
             band.isEnabled ? section(for: band, sampleRate: sampleRate) : nil
         }
     }

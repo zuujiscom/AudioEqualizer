@@ -652,7 +652,10 @@ final class AudioEngine: NSObject, ObservableObject {
 
     private func syncEQNode() {
         guard let eqNode else { return }
-        for (i, band) in bands.enumerated() where i < eqNode.bands.count {
+        // `bands` holds what the user asked to hear at each frequency; the
+        // node gets the gains that deliver it. See `EQResponse.compensated`.
+        let effective = EQResponse.compensated(bands)
+        for (i, band) in effective.enumerated() where i < eqNode.bands.count {
             let f = eqNode.bands[i]
             f.filterType = band.filterType.avType
             f.frequency = Float(band.frequency)
@@ -941,13 +944,20 @@ final class AudioEngine: NSObject, ObservableObject {
 
     func applyBandToNode(_ index: Int) {
         guard let eqNode, index < eqNode.bands.count, index < bands.count else { return }
-        let band = bands[index]
+        let effective = EQResponse.compensated(bands)
+        let band = effective[index]
         let f = eqNode.bands[index]
         f.filterType = band.filterType.avType
         f.frequency = Float(band.frequency)
-        f.gain = Float(band.gain)
         f.bandwidth = Float(band.bandwidth)
         f.bypass = !band.isEnabled || isBypassed
+
+        // Moving one fader changes what its neighbours must contribute, so
+        // every gain is refreshed — but only written where it really moved.
+        for (i, other) in effective.enumerated() where i < eqNode.bands.count {
+            let gain = Float(other.gain)
+            if eqNode.bands[i].gain != gain { eqNode.bands[i].gain = gain }
+        }
     }
 
     func applyAllBands() {
