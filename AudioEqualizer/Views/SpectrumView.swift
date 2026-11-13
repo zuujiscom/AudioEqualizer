@@ -39,7 +39,8 @@ struct SpectrumView: View {
                     .help("Output level")
 
                 if engine.isRunning {
-                    infoChip(String(format: "%.1f ms", meters.snapshot.latencyMs))
+                    infoChip(meters.snapshot.latencyMs > 0 ? String(format: "%.1f ms", meters.snapshot.latencyMs) : "— ms")
+                        .frame(minWidth: 44, alignment: .trailing)
                     infoChip(engine.outputFormat)
                 }
 
@@ -267,14 +268,15 @@ struct SpectrumView: View {
 
     private func drawCurve(_ context: inout GraphicsContext, layout: GraphLayout) {
         let plot = layout.plot
-        let sections = EQResponse.sections(for: engine.bands)
+        let rate = engine.sampleRate
+        let sections = EQResponse.sections(for: engine.bands, sampleRate: rate)
         let samples = max(32, Int(plot.width / 3))
 
         var curve = Path()
         for index in 0...samples {
             let t = Double(index) / Double(samples)
             let frequency = GraphLayout.minFrequency * pow(GraphLayout.maxFrequency / GraphLayout.minFrequency, t)
-            let db = EQResponse.decibels(sections, at: frequency)
+            let db = EQResponse.decibels(sections, at: frequency, sampleRate: rate)
             let point = CGPoint(x: plot.minX + CGFloat(t) * plot.width,
                                 y: min(plot.maxY, max(plot.minY, layout.y(db))))
             if index == 0 { curve.move(to: point) } else { curve.addLine(to: point) }

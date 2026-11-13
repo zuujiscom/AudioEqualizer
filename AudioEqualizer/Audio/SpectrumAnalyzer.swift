@@ -67,7 +67,9 @@ final class SpectrumAnalyzer {
                 (base + usable).update(repeating: 0, count: n - usable)
             }
         }
-        vDSP_vmul(windowed, 1, window, 1, &windowed, 1, vDSP_Length(n))
+        windowed.withUnsafeMutableBufferPointer { buf in
+            vDSP_vmul(buf.baseAddress!, 1, window, 1, buf.baseAddress!, 1, vDSP_Length(n))
+        }
 
         realp.withUnsafeMutableBufferPointer { realPtr in
             imagp.withUnsafeMutableBufferPointer { imagPtr in
@@ -99,7 +101,9 @@ final class SpectrumAnalyzer {
                     let power = mean / Float(n * n)
                     let db = 10.0 * log10(max(1e-12, power))
                     let normalized = (db + 80) / 80   // map -80…0 dB to 0…1
-                    result[i] = min(1, max(0, normalized))
+                    // A NaN or infinity from the audio would otherwise reach the
+                    // graph's path and blank or tear the drawing.
+                    result[i] = normalized.isFinite ? min(1, max(0, normalized)) : 0
                 }
             }
         }

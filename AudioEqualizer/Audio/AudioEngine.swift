@@ -77,6 +77,11 @@ final class AudioEngine: NSObject, ObservableObject {
     // MARK: - Core Audio
 
     /// Replaced for every processing session — see `stopProcessing()`.
+    /// Sample rate the EQ graph runs at, which the gain compensation and the
+    /// drawn curve must use: the filters' shapes depend on it. 48 kHz until a
+    /// route has been built.
+    private(set) var sampleRate: Double = 48_000
+
     private var engine = AVAudioEngine()
     private var eqNode: AVAudioUnitEQ!
     private var fftAnalyzer = SpectrumAnalyzer()
@@ -654,7 +659,7 @@ final class AudioEngine: NSObject, ObservableObject {
         guard let eqNode else { return }
         // `bands` holds what the user asked to hear at each frequency; the
         // node gets the gains that deliver it. See `EQResponse.compensated`.
-        let effective = EQResponse.compensated(bands)
+        let effective = EQResponse.compensated(bands, sampleRate: sampleRate)
         for (i, band) in effective.enumerated() where i < eqNode.bands.count {
             let f = eqNode.bands[i]
             f.filterType = band.filterType.avType
@@ -742,6 +747,10 @@ final class AudioEngine: NSObject, ObservableObject {
         ctx.inputASBD = tapASBD
         ctx.outputASBD = outputASBD
         ctx.maxFrames = 4096
+        if sampleRate != renderFormat.sampleRate {
+            sampleRate = renderFormat.sampleRate
+            syncEQNode()
+        }
         ctx.inputBufferOffset = tapBufferOffset(tapChannels: tapFormat.channelCount)
 
         // The graph runs in the standard non-interleaved float format that
@@ -898,7 +907,31 @@ final class AudioEngine: NSObject, ObservableObject {
     private func stopMetering() {
         meterTimer?.invalidate()
         meterTimer = nil
+        latencyShown = 0
+        latencyCandidate = 0
+        latencyVotes = 0
         meters.snapshot = MeterSnapshot()
+    }
+
+    /// The IO buffer length can wobble between callbacks (512 vs 480 frames…),
+    /// which made the chip flash between values. A new figure is adopted only
+    /// after it has held for half a second.
+    private var latencyShown = 0.0
+    private var latencyCandidate = 0.0
+    private var latencyVotes = 0
+
+    private func steadyLatency(_ raw: Double) -> Double {
+        guard raw > 0 else { return latencyShown }
+        if latencyShown == 0 { latencyShown = raw; return raw }
+        if abs(raw - latencyShown) < 0.05 { latencyVotes = 0; return latencyShown }
+        if abs(raw - latencyCandidate) < 0.05 {
+            latencyVotes += 1
+        } else {
+            latencyCandidate = raw
+            latencyVotes = 1
+        }
+        if latencyVotes >= 10 { latencyShown = latencyCandidate; latencyVotes = 0 }
+        return latencyShown
     }
 
     private func updateMeters() {
@@ -906,7 +939,7 @@ final class AudioEngine: NSObject, ObservableObject {
         meters.snapshot = MeterSnapshot(
             spectrum: fftAnalyzer.analyze(buffer: buffer),
             level: min(1.0, buffer.rms * 3.0),
-            latencyMs: renderer.latencyMs
+            latencyMs: steadyLatency(renderer.latencyMs)
         )
     }
 
@@ -944,7 +977,7 @@ final class AudioEngine: NSObject, ObservableObject {
 
     func applyBandToNode(_ index: Int) {
         guard let eqNode, index < eqNode.bands.count, index < bands.count else { return }
-        let effective = EQResponse.compensated(bands)
+        let effective = EQResponse.compensated(bands, sampleRate: sampleRate)
         let band = effective[index]
         let f = eqNode.bands[index]
         f.filterType = band.filterType.avType
@@ -1395,7 +1428,12 @@ final class SystemAudioRenderer: @unchecked Sendable {
 
         let bytesPerFrame = max(1, outputASBD.mBytesPerFrame)
         let frames = AVAudioFrameCount(firstOut.mDataByteSize / bytesPerFrame)
-        guard frames > 0, frames <= maxFrames else { return }
+        guard frames > 0, frames <= maxFrames else {
+            // An oversized or empty cycle: say nothing rather than play
+            // whatever the device left in the buffers.
+            silence(outList)
+            return
+        }
 
         capturedInput = input
         defer { capturedInput = nil }
